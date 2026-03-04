@@ -32,8 +32,12 @@ class Nodelet : public nodelet::Nodelet {
   bool debug_ = false;
   bool once_ = false;
   bool debug_replan_ = false;
+  // benchmark 快速模式：只执行一次轨迹优化，不做后续逐点回放/可视化循环，
+  // 用于避免回调长时间占用导致的触发堆积和超时。
+  bool bench_mode_ = false;
 
   double tracking_dur_, tracking_dist_, tolerance_d_;
+  Eigen::Vector3d ini_p_;
   Eigen::Vector3d perching_p_, perching_v_, perching_axis_;
   double perching_theta_;
 
@@ -65,9 +69,7 @@ class Nodelet : public nodelet::Nodelet {
     Eigen::Quaterniond land_q(1, 0, 0, 0);
 
     iniState.setZero();
-    iniState.col(0).x() = 0.0;
-    iniState.col(0).y() = 0.0;
-    iniState.col(0).z() = 2.0;
+    iniState.col(0) = ini_p_;
     iniState.col(1) = perching_v_;
     target_p = perching_p_;
     target_v = perching_v_;
@@ -95,18 +97,22 @@ class Nodelet : public nodelet::Nodelet {
               << land_q.z() << "," << std::endl;
 
     generate_new_traj_success = trajOptPtr_->generate_traj(iniState, target_p, target_v, land_q, 10, traj);
-    if (generate_new_traj_success) {
-      visPtr_->visualize_traj(traj, "traj");
-
-      Eigen::Vector3d tail_pos = traj.getPos(traj.getTotalDuration());
-      Eigen::Vector3d tail_vel = traj.getVel(traj.getTotalDuration());
-      visPtr_->visualize_arrow(tail_pos, tail_pos + 0.5 * tail_vel, "tail_vel");
-    }
     if (!generate_new_traj_success) {
       triger_received_ = false;
       return;
       // assert(false);
     }
+    if (bench_mode_) {
+      // bench 模式到此结束：计时日志已在 generate_traj 内打印。
+      triger_received_ = false;
+      return;
+    }
+
+    visPtr_->visualize_traj(traj, "traj");
+
+    Eigen::Vector3d tail_pos = traj.getPos(traj.getTotalDuration());
+    Eigen::Vector3d tail_vel = traj.getVel(traj.getTotalDuration());
+    visPtr_->visualize_arrow(tail_pos, tail_pos + 0.5 * tail_vel, "tail_vel");
 
     // NOTE run vis
     // hopf fiberation
@@ -243,6 +249,12 @@ class Nodelet : public nodelet::Nodelet {
   void init(ros::NodeHandle& nh) {
     // set parameters of planning
     nh.getParam("replan", debug_replan_);
+    nh.param("bench_mode", bench_mode_, false);
+
+    // Initial state position (default keeps legacy behavior)
+    nh.param("ini_px", ini_p_.x(), 0.0);
+    nh.param("ini_py", ini_p_.y(), 0.0);
+    nh.param("ini_pz", ini_p_.z(), 2.0);
 
     // NOTE once
     nh.getParam("perching_px", perching_p_.x());

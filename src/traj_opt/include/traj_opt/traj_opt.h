@@ -33,7 +33,32 @@ class TrajOpt {
   Eigen::MatrixXd initS_;
   // duration of each piece of the trajectory
   Eigen::VectorXd t_;
-  double* x_;
+  // L-BFGS 优化变量缓存。每次 generate_traj() 重新分配，结束后释放。
+  double* x_ = nullptr;
+  // 本次优化维度：base_dim(+2 in non-fixed, +0 in fixed)。
+  int opt_dim_ = 0;
+
+  // ========== Hard-Fix Terminal State 配置参数 ==========
+  // false: 维持旧行为，tail_f 与 vt 仍然参与优化
+  // true : 仅 vt 从优化向量移除；tail_f 仍参与优化
+  bool fix_terminal_state_ = false;
+  // 开发期调试：每个节点生命周期内仅打印一次优化变量布局。
+  bool print_opt_layout_once_ = false;
+  bool opt_layout_printed_ = false;
+  // 对应 fixed_* 参数是否由 ROS 显式提供。
+  // 若未提供则回退到本次 guess（0 或 warm-start）。
+  bool has_fixed_vt_x_ = false;
+  bool has_fixed_vt_y_ = false;
+  // ROS 参数 fixed_* 的数值缓存，仅在 has_fixed_* 为 true 时生效。
+  double fixed_vt_x_param_ = 0.0;
+  double fixed_vt_y_param_ = 0.0;
+
+  // ========== 本次优化上下文（供 objectiveFunc/earlyExit 读取） ==========
+  // active_vt_: 本次优化真正使用的固定 vt 值。
+  // active_vt_guess_: 本次生成的 vt guess（用于 fixed 模式下“未显式传参”回退策略）。
+  // 注意：active_vt_ 在单次 lbfgs_optimize() 期间保持不变。
+  Eigen::Vector2d active_vt_ = Eigen::Vector2d::Zero();
+  Eigen::Vector2d active_vt_guess_ = Eigen::Vector2d::Zero();
 
   std::vector<Eigen::Vector3d> tracking_ps_;
   std::vector<Eigen::Vector3d> tracking_visible_ps_;

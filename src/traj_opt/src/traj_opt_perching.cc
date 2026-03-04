@@ -123,14 +123,21 @@ static inline double objectiveFunc(void* ptrObj,
   // std::cout << "damn" << std::endl;
   iter_times_++;
   TrajOpt& obj = *(TrajOpt*)ptrObj;
+  const int base_no_terminal = obj.dim_t_ + 3 * obj.dim_p_;
+  const int tail_f_off = base_no_terminal;
+  const int vt_off = tail_f_off + 1;
   const double& t = x[0];
   double& gradt = grad[0];
   Eigen::Map<const Eigen::MatrixXd> P(x + obj.dim_t_, 3, obj.dim_p_);
   Eigen::Map<Eigen::MatrixXd> gradP(grad + obj.dim_t_, 3, obj.dim_p_);
-  const double& tail_f = x[obj.dim_t_ + obj.dim_p_ * 3];
-  double& grad_f = grad[obj.dim_t_ + obj.dim_p_ * 3];
-  Eigen::Map<const Eigen::Vector2d> vt(x + obj.dim_t_ + 3 * obj.dim_p_ + 1);
-  Eigen::Map<Eigen::Vector2d> grad_vt(grad + obj.dim_t_ + 3 * obj.dim_p_ + 1);
+
+  // tail_f 在 fixed/non-fixed 两种模式下都参与优化并从 x 读取。
+  double tail_f = x[tail_f_off];
+  // vt 在 fixed 模式下不在优化向量中，读取本次固定值 active_vt_。
+  Eigen::Vector2d vt = obj.active_vt_;
+  if (!obj.fix_terminal_state_) {
+    vt = Eigen::Map<const Eigen::Vector2d>(x + vt_off);
+  }
 
   double dT = expC2(t);
   Eigen::Vector3d tailV, grad_tailV;
@@ -167,14 +174,22 @@ static inline double objectiveFunc(void* ptrObj,
   obj.mincoOpt_.gdT += obj.mincoOpt_.gdTail.col(0).dot(obj.N_ * car_v_);
   grad_tailV = obj.mincoOpt_.gdTail.col(1);
   double grad_thrust = obj.mincoOpt_.gdTail.col(2).dot(tail_q_v_);
-  addLayerThrust(tail_f, grad_thrust, grad_f);
 
-  if (obj.rhoVt_ > -1) {
-    grad_vt.x() = grad_tailV.dot(v_t_x_);
-    grad_vt.y() = grad_tailV.dot(v_t_y_);
-    double vt_sqr = vt.squaredNorm();
-    cost += obj.rhoVt_ * vt_sqr;
-    grad_vt += obj.rhoVt_ * 2 * vt;
+  // tail_f 的梯度在两种模式下都必须回传（tail_f 永远是优化变量）。
+  double grad_f = 0.0;
+  addLayerThrust(tail_f, grad_thrust, grad_f);
+  grad[tail_f_off] = grad_f;
+
+  // fixed 模式下 vt 不在优化向量中，必须无条件跳过 rhoVt 成本/梯度。
+  if (!obj.fix_terminal_state_) {
+    if (obj.rhoVt_ > -1) {
+      Eigen::Map<Eigen::Vector2d> grad_vt(grad + vt_off);
+      grad_vt.x() = grad_tailV.dot(v_t_x_);
+      grad_vt.y() = grad_tailV.dot(v_t_y_);
+      double vt_sqr = vt.squaredNorm();
+      cost += obj.rhoVt_ * vt_sqr;
+      grad_vt += obj.rhoVt_ * 2 * vt;
+    }
   }
 
   obj.mincoOpt_.gdT += obj.rhoT_;
@@ -198,10 +213,17 @@ static inline int earlyExit(void* ptrObj,
                             int ls) {
   TrajOpt& obj = *(TrajOpt*)ptrObj;
   if (obj.pause_debug_) {
+    const int base_no_terminal = obj.dim_t_ + 3 * obj.dim_p_;
+    const int tail_f_off = base_no_terminal;
+    const int vt_off = tail_f_off + 1;
     const double& t = x[0];
     Eigen::Map<const Eigen::MatrixXd> P(x + obj.dim_t_, 3, obj.dim_p_);
-    const double& tail_f = x[obj.dim_t_ + obj.dim_p_ * 3];
-    Eigen::Map<const Eigen::Vector2d> vt(x + obj.dim_t_ + 3 * obj.dim_p_ + 1);
+    // earlyExit 的变量读取规则与 objectiveFunc 保持一致。
+    double tail_f = x[tail_f_off];
+    Eigen::Vector2d vt = obj.active_vt_;
+    if (!obj.fix_terminal_state_) {
+      vt = Eigen::Map<const Eigen::Vector2d>(x + vt_off);
+    }
 
     double dT = expC2(t);
     double T = obj.N_ * dT;
@@ -299,13 +321,44 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
                             Trajectory& traj,
                             const double& t_replan) {
   N_ = N;
+  // 核对离散化参数是否与论文 Table I 一致：
+  // 期望值应为 K=16, N=10, N*K=160。
+  std::cout << "[TrajOpt] Discretization check: K=" << K_
+            << ", N=" << N_
+            << ", N*K=" << (N_ * K_) << std::endl;
   dim_t_ = 1;
   dim_p_ = N_ - 1;
-  x_ = new double[dim_t_ + 3 * dim_p_ + 1 + 2];  // 1: tail thrust; 2: tail vt
+  // 优化向量布局（vt-only fixed）：
+  // [ t | P(3*(N-1)) | tail_f | vt_x | vt_y(non-fixed only) ]
+  const int base_no_terminal = dim_t_ + 3 * dim_p_;
+  const int tail_f_off = base_no_terminal;   // tail_f 永远存在
+  const int vt_off = tail_f_off + 1;         // vt 仅在 non-fixed 时存在
+  const int base_dim = base_no_terminal + 1; // 含 tail_f，不含 vt
+  // 每次调用必须重算维度，禁止复用旧值。
+  opt_dim_ = base_dim + (fix_terminal_state_ ? 0 : 2);
+  if (print_opt_layout_once_ && !opt_layout_printed_) {
+    std::cout << "[TrajOpt] Opt layout: base_no_terminal=" << base_no_terminal
+              << ", base_dim=" << base_dim
+              << ", opt_dim=" << opt_dim_
+              << ", tail_f_off=" << tail_f_off
+              << ", vt_off=" << vt_off
+              << ", fix_terminal_state=" << (fix_terminal_state_ ? "true" : "false")
+              << std::endl;
+    opt_layout_printed_ = true;
+  }
+  x_ = new double[opt_dim_];
+  // 统一释放入口，保证所有 return false 路径不泄露。
+  auto cleanup_x = [&]() {
+    if (x_ != nullptr) {
+      delete[] x_;
+      x_ = nullptr;
+    }
+  };
+
   double& t = x_[0];
   Eigen::Map<Eigen::MatrixXd> P(x_ + dim_t_, 3, dim_p_);
-  double& tail_f = x_[dim_t_ + 3 * dim_p_];
-  Eigen::Map<Eigen::Vector2d> vt(x_ + dim_t_ + 3 * dim_p_ + 1);
+  double guessed_tail_f = 0.0;
+  Eigen::Vector2d guessed_vt = Eigen::Vector2d::Zero();
   car_p_ = car_p;
   car_v_ = car_v;
   // std::cout << "land_q: "
@@ -328,15 +381,11 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
   v_t_y_ = tail_q_v_.cross(v_t_x_);
   v_t_y_.normalize();
 
-  vt.setConstant(0.0);
-
   // NOTE set boundary conditions
   initS_ = iniState;
 
   // set initial guess with obvp minimum jerk + rhoT
   mincoOpt_.reset(N_);
-
-  tail_f = 0;
 
   bool opt_once = initial_guess_ && t_replan > 0 && t_replan < init_traj_.getTotalDuration();
   if (opt_once) {
@@ -346,14 +395,14 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
       double tt0 = (i * 1.0 / N_) * init_T;
       P.col(i - 1) = init_traj_.getPos(tt0 + t_replan);
     }
-    tail_f = init_tail_f_;
-    vt = init_vt_;
+    guessed_tail_f = init_tail_f_;
+    guessed_vt = init_vt_;
   } else {
     Eigen::MatrixXd bvp_i = initS_;
     Eigen::MatrixXd bvp_f(3, 4);
     bvp_f.col(0) = car_p_;
     bvp_f.col(1) = car_v_;
-    bvp_f.col(2) = forward_thrust(tail_f) * tail_q_v_ + g_;
+    bvp_f.col(2) = forward_thrust(guessed_tail_f) * tail_q_v_ + g_;
     bvp_f.col(3).setZero();
     double T_bvp = (bvp_f.col(0) - bvp_i.col(0)).norm() / vmax_;
     CoefficientMat coeffMat;
@@ -378,9 +427,24 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
     }
     t = logC2(T_bvp / N_);
   }
+
+  // 记录本次 vt guess，供 fixed 模式“未显式给 fixed_vt_* 参数”时回退使用。
+  active_vt_guess_ = guessed_vt;
+
+  // 在单次 lbfgs 调用前刷新 active_vt_，并在该次优化期间保持不变。
+  active_vt_.x() = has_fixed_vt_x_ ? fixed_vt_x_param_ : active_vt_guess_.x();
+  active_vt_.y() = has_fixed_vt_y_ ? fixed_vt_y_param_ : active_vt_guess_.y();
+
+  // tail_f 在 fixed/non-fixed 下都参与优化，初值都要写入 x。
+  x_[tail_f_off] = guessed_tail_f;
+  // vt 仅在 non-fixed 下参与优化，初值写入 x 作为 warm-start。
+  if (!fix_terminal_state_) {
+    Eigen::Map<Eigen::Vector2d> vt(x_ + vt_off);
+    vt = guessed_vt;
+  }
   // std::cout << "initial guess >>> t: " << t << std::endl;
-  // std::cout << "initial guess >>> tail_f: " << tail_f << std::endl;
-  // std::cout << "initial guess >>> vt: " << vt.transpose() << std::endl;
+  // std::cout << "initial guess >>> tail_f: " << guessed_tail_f << std::endl;
+  // std::cout << "initial guess >>> vt: " << guessed_vt.transpose() << std::endl;
 
   // NOTE optimization
   lbfgs::lbfgs_parameter_t lbfgs_params;
@@ -400,7 +464,7 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
   tictoc_integral_ = 0;
 
   iter_times_ = 0;
-  opt_ret = lbfgs::lbfgs_optimize(dim_t_ + 3 * dim_p_ + 1 + 2, x_, &minObjective,
+  opt_ret = lbfgs::lbfgs_optimize(opt_dim_, x_, &minObjective,
                                   &objectiveFunc, nullptr,
                                   &earlyExit, this, &lbfgs_params);
 
@@ -416,19 +480,28 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
   if (opt_ret < 0) {
-    delete[] x_;
+    cleanup_x();
     return false;
   }
+
+  // 取本次最终终端变量：
+  // tail_f 始终来自优化向量；vt 在 fixed 用 active_vt_，non-fixed 用优化结果。
+  double tail_f_final = x_[tail_f_off];
+  Eigen::Vector2d vt_final = active_vt_;
+  if (!fix_terminal_state_) {
+    vt_final = Eigen::Map<const Eigen::Vector2d>(x_ + vt_off);
+  }
+
   double dT = expC2(t);
   double T = N_ * dT;
   Eigen::Vector3d tailV;
-  forwardTailV(vt, tailV);
+  forwardTailV(vt_final, tailV);
   Eigen::MatrixXd tailS(3, 4);
   tailS.col(0) = car_p_ + car_v_ * T + tail_q_v_ * robot_l_;
   tailS.col(1) = tailV;
-  tailS.col(2) = forward_thrust(tail_f) * tail_q_v_ + g_;
+  tailS.col(2) = forward_thrust(tail_f_final) * tail_q_v_ + g_;
   tailS.col(3).setZero();
-  // std::cout << "tail thrust: " << forward_thrust(tail_f) << std::endl;
+  // std::cout << "tail thrust: " << forward_thrust(tail_f_final) << std::endl;
   // std::cout << tailS << std::endl;
   mincoOpt_.generate(initS_, tailS, P, dT);
   traj = mincoOpt_.getTraj();
@@ -438,10 +511,11 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
   std::cout << "maxThrust: " << traj.getMaxThrust() << std::endl;
 
   init_traj_ = traj;
-  init_tail_f_ = tail_f;
-  init_vt_ = vt;
+  // 保存为下一次 warm-start 来源。
+  init_tail_f_ = tail_f_final;
+  init_vt_ = vt_final;
   initial_guess_ = true;
-  delete[] x_;
+  cleanup_x();
   return true;
 }
 
@@ -571,6 +645,27 @@ TrajOpt::TrajOpt(ros::NodeHandle& nh) {
   nh.getParam("rhoThrust", rhoThrust_);
   nh.getParam("rhoOmega", rhoOmega_);
   nh.getParam("rhoPerchingCollision", rhoPerchingCollision_);
+  // hard-fix 相关参数：
+  // - fix_terminal_state=false: 与旧版本完全一致；
+  // - fix_terminal_state=true : 仅从优化变量中移除 vt，tail_f 仍参与优化。
+  nh.param("fix_terminal_state", fix_terminal_state_, false);
+  nh.param("print_opt_layout_once", print_opt_layout_once_, false);
+  // getParam 返回值用于区分“参数未给”与“参数给了且值为 0”两种情况。
+  has_fixed_vt_x_ = nh.getParam("fixed_vt_x", fixed_vt_x_param_);
+  has_fixed_vt_y_ = nh.getParam("fixed_vt_y", fixed_vt_y_param_);
+  double deprecated_fixed_tail_f = 0.0;
+  if (nh.getParam("fixed_tail_f", deprecated_fixed_tail_f)) {
+    std::cout << "[TrajOpt][deprecated] 'fixed_tail_f' is ignored in vt-only strict mode. "
+                 "received fixed_tail_f=" << deprecated_fixed_tail_f << std::endl;
+  }
+  std::cout << "[TrajOpt] Terminal-fix config: fix_terminal_state="
+            << (fix_terminal_state_ ? "true" : "false")
+            << ", has_fixed_vt_x=" << (has_fixed_vt_x_ ? "true" : "false")
+            << ", fixed_vt_x_param=" << fixed_vt_x_param_
+            << ", has_fixed_vt_y=" << (has_fixed_vt_y_ ? "true" : "false")
+            << ", fixed_vt_y_param=" << fixed_vt_y_param_
+            << ", print_opt_layout_once=" << (print_opt_layout_once_ ? "true" : "false")
+            << std::endl;
   nh.getParam("pause_debug", pause_debug_);
   visPtr_ = std::make_shared<vis_utils::VisUtils>(nh);
 }
