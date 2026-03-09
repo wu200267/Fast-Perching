@@ -1,0 +1,3 @@
+latest_analysis_dir=../vt_mapping_dual_baseline_v3
+latest_analysis_summary=../vt_mapping_dual_baseline_v3/vt_mapping_summary_v3.txt
+note=directory_level_entrypoint; summary_is_current_stage_not_frozen.

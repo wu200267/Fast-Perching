@@ -1,0 +1,26 @@
+ M .vscode/c_cpp_properties.json
+ M src/odom_vis/odom_visualization/CMakeLists.txt
+ M src/planning/launch/perching.launch
+ M src/planning/src/planning_nodelet.cpp
+ M src/traj_opt/include/traj_opt/traj_opt.h
+ M src/traj_opt/src/traj_opt_perching.cc
+?? .tmp_rho_sweep/
+?? .vscode/tasks.json
+?? Real-Time_Trajectory_Planning_for_Aerial_Perching.pdf
+?? docs/
+?? fig11_outputs/
+?? frames.gv
+?? frames.pdf
+?? sh_utils/.tmp_rho_sweep/
+?? sh_utils/__pycache__/
+?? sh_utils/analyze_fig11_mechanism.py
+?? sh_utils/analyze_fig11_paperlike_visual.py
+?? sh_utils/analyze_fig11_vt_mapping.py
+?? sh_utils/deprecated/
+?? sh_utils/plot_fig11.py
+?? sh_utils/reproduce_fig11.sh
+?? sh_utils/reproduce_fig11_mechanism.sh
+?? sh_utils/reproduce_fig11_paperlike_visual.sh
+?? sh_utils/scan_fig11_ini_px.sh
+?? sh_utils/scan_fig11_px.sh
+?? sh_utils/scan_fig11_px_ini_local.sh

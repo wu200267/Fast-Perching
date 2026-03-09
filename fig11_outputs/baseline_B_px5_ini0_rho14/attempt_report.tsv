@@ -1,0 +1,5 @@
+attempt	case	status	solve_mode	winner_eps_level	ini_v_source	max_abs_omega2_int	max_abs_omega2_export	K_effective	rhoOmega_effective	rhoThrust_effective	omega_max_effective	param_ok	solve_ok	eps_ok	source_ok	int_ok	notes
+01	zt_2_0	PASS	single	strict	explicit	3.000127199	3.000104349	32	1400000.0	100000.0	3.0	1	1	1	1	1	
+01	zt_1_5	PASS	single	strict	explicit	3.000682248	3.000685286	32	1400000.0	100000.0	3.0	1	1	1	1	1	
+01	zt_1_0	PASS	single	strict	explicit	3.000952849	3.001007165	32	1400000.0	100000.0	3.0	1	1	1	1	1	
+01	ALL	PASS	-	-	-	-	-	32	1400000.0	100000.0	3.0	-	-	-	-	-	fail_count=0;warn_count=0;cases=3

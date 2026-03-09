@@ -1,0 +1,11 @@
+baseline_id	baseline_dir	baseline_feasibility_status	candidate	candidate_role	q_zt_2_0	q_zt_1_5	q_zt_1_0	monotonic_deficit	monotonic_margin	baseline_primary_rank
+A	/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/baseline_A_px5_ini0_rho12	has_relaxed	vt1	primary	0.000000000	0.000000000	0.000000000	0.000000000	0.000000000	1
+A	/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/baseline_A_px5_ini0_rho12	has_relaxed	neg_vt2	primary	-0.161037629	-0.077048707	-0.108275686	0.031226979	-0.031226979	2
+A	/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/baseline_A_px5_ini0_rho12	has_relaxed	vt2	primary	0.161037629	0.077048707	0.108275686	0.083988922	-0.083988922	3
+A	/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/baseline_A_px5_ini0_rho12	has_relaxed	vt_norm	primary	0.161037629	0.077048707	0.108275686	0.083988922	-0.083988922	4
+A	/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/baseline_A_px5_ini0_rho12	has_relaxed	vt_signed	legacy_proxy	-0.161037629	-0.077048707	-0.108275686	0.031226979	-0.031226979	
+B	/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/baseline_B_px5_ini0_rho14	all_strict	vt1	primary	0.000000000	0.000000000	0.000000000	0.000000000	0.000000000	1
+B	/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/baseline_B_px5_ini0_rho14	all_strict	vt2	primary	0.046402457	0.039001973	0.122583487	0.007400484	-0.007400484	2
+B	/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/baseline_B_px5_ini0_rho14	all_strict	vt_norm	primary	0.046402457	0.039001973	0.122583487	0.007400484	-0.007400484	3
+B	/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/baseline_B_px5_ini0_rho14	all_strict	neg_vt2	primary	-0.046402457	-0.039001973	-0.122583487	0.083581514	-0.083581514	4
+B	/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/baseline_B_px5_ini0_rho14	all_strict	vt_signed	legacy_proxy	-0.046402457	-0.039001973	-0.122583487	0.083581514	-0.083581514	

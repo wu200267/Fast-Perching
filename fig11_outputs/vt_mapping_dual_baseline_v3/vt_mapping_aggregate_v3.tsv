@@ -1,0 +1,4 @@
+candidate	aggregate_primary_rank	baseline_count	sign_match_count_total	sign_mismatch_count_total	sign_mismatch_count_mean	magnitude_scale_gap_mean	mae_to_paper_mean	rmse_to_paper_mean	monotonic_deficit_mean	monotonic_margin_mean
+neg_vt2	1	2	6	0	0.000000000	0.396132964	0.132244303	0.173395771	0.057404246	-0.057404246
+vt2	2	2	0	6	3.000000000	0.396132964	0.245391656	0.301492742	0.045694703	-0.045694703
+vt_norm	3	2	0	6	3.000000000	0.396132964	0.245391656	0.301492742	0.045694703	-0.045694703

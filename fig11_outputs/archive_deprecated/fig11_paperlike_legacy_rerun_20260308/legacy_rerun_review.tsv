@@ -1,0 +1,2 @@
+scope	case	field	source_value	rerun_value	abs_delta	tolerance	match_flag
+global	ALL	code_state_mismatch	NO	YES	NA	NA	FAIL

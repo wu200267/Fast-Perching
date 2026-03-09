@@ -1,0 +1,35 @@
+generated_at=2026-03-08T16:14:02Z
+source_dir=/tmp/fast_perching_fig11_rerun_20260308
+source_selected_profile=attempt_02_K32_rhoOmega1000000.0
+
+[KEY_FILES]
+source.run_config	path=/tmp/fast_perching_fig11_rerun_20260308/run_config.env	size=917	mtime=2026-03-08 06:31:38.759825011 +0000	sha256=7e555699a0e7a9ec9858cf54d597fac529160241f0208dca76c71e9fd27d04c4
+source.attempt_report	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_report.tsv	size=856	mtime=2026-03-08 06:31:38.334819587 +0000	sha256=033ec668583ff2790962f0eb6306dece52e0f73f890f4b69eefd6737eb146711
+source.git_commit	path=/tmp/fast_perching_fig11_rerun_20260308/git_commit_hash.txt	size=41	mtime=2026-03-08 06:31:02.770357632 +0000	sha256=5e7afce6df67193bcb39d87fb8df03e1082b503f0c021032ac3f402bc718f82a
+source.git_branch	path=/tmp/fast_perching_fig11_rerun_20260308/git_branch.txt	size=27	mtime=2026-03-08 06:31:02.772393529 +0000	sha256=5edad9ec7cb71042d03c62bdbdae4a5341ada051bbb572be3b8dc1de2dfad633
+source.git_status	path=/tmp/fast_perching_fig11_rerun_20260308/git_status_short.txt	size=463	mtime=2026-03-08 06:31:02.773357672 +0000	sha256=b89ded480e10ea10bcf4883d5325ed9de9753e08d58c617d260fac2505960e36
+source.fig11_png	path=/tmp/fast_perching_fig11_rerun_20260308/fig11_reproduced.png	size=393897	mtime=2026-03-08 06:31:38.735824704 +0000	sha256=a36b038e07a8df0ce7c55894d2cc88db9e22ce3f5d9b8846f31a98c0cfa5ce35
+source.zt_2_0.summary	path=/tmp/fast_perching_fig11_rerun_20260308/zt_2_0_summary.txt	size=962	mtime=2026-03-08 06:31:38.337684829 +0000	sha256=2c7b6b1336f94b983547b4513847bed8bc93e2a752019014908fbc8e26fa09a7
+source.zt_2_0.csv	path=/tmp/fast_perching_fig11_rerun_20260308/zt_2_0.csv	size=24370	mtime=2026-03-08 06:31:38.336907830 +0000	sha256=f48033ffb22e38de2af48956c56039dabf672bee12ff326957e4119dda5a6ea2
+source.zt_2_0.launch	path=/tmp/fast_perching_fig11_rerun_20260308/zt_2_0.launch	size=2549	mtime=2026-03-08 06:31:38.339309637 +0000	sha256=805b5b70c55f4c614bea1ef2dbebaf9112ef9d162c35b188254e71aa98351b7e
+source.zt_2_0.rosparam	path=/tmp/fast_perching_fig11_rerun_20260308/zt_2_0_rosparam.yaml	size=897	mtime=2026-03-08 06:31:38.338508500 +0000	sha256=3a507ba561d20492aced500ba33784e2d5aad179c9b3b726ce780c12bf138bb7
+source_selected.zt_2_0.summary	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_2_0_summary.txt	size=962	mtime=2026-03-08 06:31:22.351613985 +0000	sha256=2c7b6b1336f94b983547b4513847bed8bc93e2a752019014908fbc8e26fa09a7
+source_selected.zt_2_0.csv	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_2_0.csv	size=24370	mtime=2026-03-08 06:31:22.351613985 +0000	sha256=f48033ffb22e38de2af48956c56039dabf672bee12ff326957e4119dda5a6ea2
+source_selected.zt_2_0.launch	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_2_0.launch	size=2549	mtime=2026-03-08 06:31:20.674456862 +0000	sha256=805b5b70c55f4c614bea1ef2dbebaf9112ef9d162c35b188254e71aa98351b7e
+source_selected.zt_2_0.rosparam	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_2_0_rosparam.yaml	size=897	mtime=2026-03-08 06:31:21.724605854 +0000	sha256=3a507ba561d20492aced500ba33784e2d5aad179c9b3b726ce780c12bf138bb7
+source.zt_1_5.summary	path=/tmp/fast_perching_fig11_rerun_20260308/zt_1_5_summary.txt	size=963	mtime=2026-03-08 06:31:38.341687053 +0000	sha256=66baaeb7ebee512420750c84b45d728c4a2eb6e268a427fc2fc172c336b45f0d
+source.zt_1_5.csv	path=/tmp/fast_perching_fig11_rerun_20260308/zt_1_5.csv	size=27153	mtime=2026-03-08 06:31:38.340939476 +0000	sha256=6e40a878a1a50723df927e03e4948c87f6aec5d20afe666e4fc7c0149c95c539
+source.zt_1_5.launch	path=/tmp/fast_perching_fig11_rerun_20260308/zt_1_5.launch	size=2549	mtime=2026-03-08 06:31:38.343169577 +0000	sha256=e1fa8b247287af9a003af38a14914369f3a0afaeac47a67f4afad324414eb0d2
+source.zt_1_5.rosparam	path=/tmp/fast_perching_fig11_rerun_20260308/zt_1_5_rosparam.yaml	size=897	mtime=2026-03-08 06:31:38.341819676 +0000	sha256=3b983f7c6215db5d2044f7cf8edaf0c640328de6ffe0b94928eacc1a243850b0
+source_selected.zt_1_5.summary	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_1_5_summary.txt	size=963	mtime=2026-03-08 06:31:28.328691248 +0000	sha256=66baaeb7ebee512420750c84b45d728c4a2eb6e268a427fc2fc172c336b45f0d
+source_selected.zt_1_5.csv	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_1_5.csv	size=27153	mtime=2026-03-08 06:31:28.328691248 +0000	sha256=6e40a878a1a50723df927e03e4948c87f6aec5d20afe666e4fc7c0149c95c539
+source_selected.zt_1_5.launch	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_1_5.launch	size=2549	mtime=2026-03-08 06:31:26.620100308 +0000	sha256=e1fa8b247287af9a003af38a14914369f3a0afaeac47a67f4afad324414eb0d2
+source_selected.zt_1_5.rosparam	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_1_5_rosparam.yaml	size=897	mtime=2026-03-08 06:31:27.667682726 +0000	sha256=3b983f7c6215db5d2044f7cf8edaf0c640328de6ffe0b94928eacc1a243850b0
+source.zt_1_0.summary	path=/tmp/fast_perching_fig11_rerun_20260308/zt_1_0_summary.txt	size=963	mtime=2026-03-08 06:31:38.345183862 +0000	sha256=3d2c7fbb0f5e715b8b2e63167fa5c4c8fb296c80fba0aa5ce4f9f1ae53715180
+source.zt_1_0.csv	path=/tmp/fast_perching_fig11_rerun_20260308/zt_1_0.csv	size=28392	mtime=2026-03-08 06:31:38.344515196 +0000	sha256=d0589e8d3e2f6e4517e6cc12711decfb78ea6c267261c5ec3a94fb43647d3730
+source.zt_1_0.launch	path=/tmp/fast_perching_fig11_rerun_20260308/zt_1_0.launch	size=2549	mtime=2026-03-08 06:31:38.346598651 +0000	sha256=720c836388e0bde70e73dc7ea074483c2dbbe13b62f8b1c4eb594c1ed2d28c49
+source.zt_1_0.rosparam	path=/tmp/fast_perching_fig11_rerun_20260308/zt_1_0_rosparam.yaml	size=897	mtime=2026-03-08 06:31:38.345845878 +0000	sha256=854924189b8423745056c8667a2dbd3a48f0b3a5fa1a6281f1ac035ad19b210d
+source_selected.zt_1_0.summary	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_1_0_summary.txt	size=963	mtime=2026-03-08 06:31:34.153766113 +0000	sha256=3d2c7fbb0f5e715b8b2e63167fa5c4c8fb296c80fba0aa5ce4f9f1ae53715180
+source_selected.zt_1_0.csv	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_1_0.csv	size=28392	mtime=2026-03-08 06:31:34.153766113 +0000	sha256=d0589e8d3e2f6e4517e6cc12711decfb78ea6c267261c5ec3a94fb43647d3730
+source_selected.zt_1_0.launch	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_1_0.launch	size=2549	mtime=2026-03-08 06:31:32.460978660 +0000	sha256=720c836388e0bde70e73dc7ea074483c2dbbe13b62f8b1c4eb594c1ed2d28c49
+source_selected.zt_1_0.rosparam	path=/tmp/fast_perching_fig11_rerun_20260308/attempt_02_K32_rhoOmega1000000.0/zt_1_0_rosparam.yaml	size=897	mtime=2026-03-08 06:31:33.510757869 +0000	sha256=854924189b8423745056c8667a2dbd3a48f0b3a5fa1a6281f1ac035ad19b210d

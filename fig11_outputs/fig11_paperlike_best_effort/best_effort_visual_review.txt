@@ -1,0 +1,25 @@
+workflow=paperlike_visual_reproduction
+main_target=visual_similarity_to_paper_fig11
+note=This is a visual similarity grade, not a mechanism proof and not an exact numeric reproduction.
+
+trajectory_similarity=high
+thrust_boundary_similarity=low
+omega_shape_similarity=high
+overall_visual_similarity=low
+
+[trajectory_checks]
+start_aligned=PASS
+end_x_aligned=PASS
+end_z_order=PASS
+min_z_order=PASS
+all_have_dip=PASS
+min_x_interior=PASS
+
+[per_case_metrics]
+case=zt_2.0 tau_norm_min=7.575888 tau_norm_max=17.000096 omega2_min=-3.000703 omega2_max=3.000172 x_range=3.980000 z_range=0.730780 x_end=3.980000 z_end=2.000000 vt_signed=-0.032637 neg_vt2=-0.032637
+case=zt_1.5 tau_norm_min=5.541313 tau_norm_max=17.000092 omega2_min=-3.000741 omega2_max=3.000476 x_range=3.980002 z_range=1.194331 x_end=3.980000 z_end=1.500000 vt_signed=-0.224557 neg_vt2=-0.224557
+case=zt_1.0 tau_norm_min=5.003848 tau_norm_max=17.000208 omega2_min=-3.001084 omega2_max=2.986998 x_range=3.980000 z_range=1.571929 x_end=3.980000 z_end=1.000000 vt_signed=-0.430156 neg_vt2=-0.430156
+
+paper_crop=/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/vt_mapping_dual_baseline/paper_fig11_crop.png
+reproduced_fig=/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/fig11_paperlike_best_effort/fig11_reproduced.png
+side_by_side_fig=/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/fig11_paperlike_best_effort/fig11_side_by_side_paperlike.png

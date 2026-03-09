@@ -1,0 +1,4 @@
+generated_at=2026-03-09T07:34:06Z
+entry_type=paperlike_visual_reproduction
+entry_dir=/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/fig11_paperlike_best_effort
+entry_note=visual similarity workflow; not mechanism proof; not exact numeric reproduction

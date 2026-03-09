@@ -1,0 +1,5 @@
+attempt	case	status	solve_mode	winner_eps_level	ini_v_source	max_abs_omega2_int	max_abs_omega2_export	K_effective	rhoOmega_effective	rhoThrust_effective	omega_max_effective	param_ok	solve_ok	eps_ok	source_ok	int_ok	notes
+01	zt_2_0	PASS	single	strict	explicit	3.000318286	3.000298907	32	1200000.0	100000.0	3.0	1	1	1	1	1	
+01	zt_1_5	PASS	single	strict	explicit	3.000404146	3.000689894	32	1200000.0	100000.0	3.0	1	1	1	1	1	
+01	zt_1_0	FAIL	single	relaxed	explicit	3.001034657	3.001420698	32	1200000.0	100000.0	3.0	1	1	0	1	1	winner_eps=relaxed;
+01	ALL	FAIL	-	-	-	-	-	32	1200000.0	100000.0	3.0	-	-	-	-	-	fail_count=1;warn_count=0;cases=3
