@@ -1,14 +1,40 @@
 <launch>
 
+  <!--
+    节点 1: RViz 可视化界面
+    - 作用: 加载预设 rviz 配置，显示轨迹/目标/机体等 marker。
+    - 与规划算法无直接耦合，不影响优化数值结果（只影响显示）。
+  -->
   <node name="rviz" pkg="rviz" type="rviz" args="-d $(find planning)/config/rviz_sim.rviz">
   </node>
 
+  <!--
+    所有子节点统一挂在 /drone0 命名空间下，便于多机扩展。
+    例如 private topic "~odom" 解析后是 /drone0/<node_name>/odom。
+  -->
   <group ns="drone0">
 
+    <!--
+      节点 2: 机体可视化（odom_visualization）
+      - 订阅:
+        "~odom" (经 remap 后 -> /drone0/odom, 类型 nav_msgs/Odometry)
+      - 发布（private namespace 下）:
+        pose/path/velocity/covariance/covariance_velocity/trajectory/sensor/robot/height/fov_visual
+      - 说明: 仅用于显示机体和轨迹，不参与优化求解。
+    -->
     <node pkg="odom_visualization" name="odom_visualization" type="odom_visualization" output="screen">
       <remap from="~odom" to="odom" />
       <param name="robot_scale" value="1.0"/>
     </node>
+
+    <!--
+      节点 3: 着陆平台可视化（odom_visualization_plate）
+      - 订阅:
+        "~odom" (经 remap 后 -> /drone0/planning/target_odom, 类型 nav_msgs/Odometry)
+      - 发布（private namespace 下）:
+        polygon (visualization_msgs/Marker)
+      - 说明: 仅显示目标平台姿态和尺寸，不参与优化求解。
+    -->
     <node pkg="odom_visualization" name="odom_visualization_plate" type="odom_visualization_plate" output="screen">
       <remap from="~odom" to="planning/target_odom" />
       <param name="height" value="1.2"/>
@@ -16,35 +42,86 @@
       <param name="platform_r" value="1.0"/>
     </node>
 
+    <!--
+      节点 4: nodelet manager
+      - 作用: 作为同进程容器加载 planning nodelet。
+      - 线程数会影响并发调度和响应性，但一般不改变优化问题本身。
+    -->
     <node pkg="nodelet" type="nodelet" name="manager" args="manager" output="screen">
       <param name="num_worker_threads" value="16"/>
     </node>
 
+    <!--
+      节点 5: 规划 nodelet（核心）
+      - 真正执行轨迹生成、可行性约束代价计算、（可选）重规划。
+      - 其参数几乎都直接或间接影响规划结果。
+    -->
     <node pkg="nodelet" type="nodelet" name="planning" args="load planning/Nodelet manager" output="screen">
+      <!--
+        ===== Topic remap（接口层）=====
+        说明:
+        1) 当前代码中实际明确使用的是 "~triger"。
+        2) ~heartbeat/~trajectory/~replanState/~target/~land_triger 为保留接口，便于扩展或兼容。
+      -->
       <remap from="~odom" to="odom"/>
       <remap from="~heartbeat" to="heartbeat"/>
       <remap from="~trajectory" to="trajectory"/>
       <remap from="~replanState" to="replanState"/>
+      <!-- 注意拼写: 项目中触发话题名是 triger（不是 trigger） -->
       <remap from="~triger" to="/triger"/>
       <remap from="~land_triger" to="/land_triger"/>
       <remap from="~target" to="/target/odom"/>
 
+      <!--
+        规划循环频率（意图上影响重规划/触发响应）。
+        注意: 当前 planning_nodelet.cpp 中 plan_hz_ 默认值是 10，
+             尚未读取该参数（代码里没有 getParam("plan_hz", ...)）。
+      -->
       <param name="plan_hz" value="5"/>
 
+      <!--
+        ===== 离散化与动力学硬约束参数（直接影响结果）=====
+        K: 每段积分采样密度（越大约束逼近越细，计算更慢）
+        vmax/amax: 平动速度/加速度限制（当前主要显式使用 vmax）
+      -->
       <param name="K" value="16"/>
       <param name="vmax" value="6.0"/>
       <param name="amax" value="6.0"/>
 
+      <!--
+        thrust/omega 约束（直接影响可行域）
+        thrust_max/min: 净推力上下界
+        omega_max: 机体角速度限制（Hopf 形式）
+        omega_yaw_max: 当前代码中 yaw 角速度代价函数未启用（保留参数）
+      -->
       <param name="thrust_max" value="17.0"/>
       <param name="thrust_min" value="5.0"/>
       <param name="omega_max" value="3.0"/>
       <param name="omega_yaw_max" value="0.5"/>
 
+      <!--
+        ===== 机体/平台几何与终端法向速度（直接影响结果）=====
+        robot_l: 机体质心到底部“接触圆盘中心”的偏移
+        robot_r: 机体底部圆盘半径
+        platform_r: 平台有效半径（用于碰撞相关计算）
+        v_plus: 期望终端法向相对速度（论文里常设 0.3）
+      -->
       <param name="robot_l" value="0.02"/>
       <param name="robot_r" value="0.13"/>
       <param name="platform_r" value="1.0"/>
       <param name="v_plus" value="0.3"/>
 
+      <!--
+        ===== 代价函数权重（直接影响优化偏好）=====
+        rhoT: 时间正则项权重（偏大倾向更短时长）
+        rhoP: 地面约束惩罚权重
+        rhoV: 速度超限惩罚权重
+        rhoA: 当前版本中未单独显式使用（保留）
+        rhoVt: 终端切向速度惩罚权重（越大越“贴近零切向”）
+        rhoThrust: 推力约束惩罚权重
+        rhoOmega: 角速度约束惩罚权重
+        rhoPerchingCollision: 机体与平台碰撞惩罚权重
+      -->
       <param name="rhoT" value="100000.0"/>
       <param name="rhoP" value="10000000.0"/>
       <param name="rhoV" value="1000.0"/>
@@ -54,6 +131,11 @@
       <param name="rhoOmega" value="100000.0"/>
       <param name="rhoPerchingCollision" value="1000000.0"/>
 
+      <!--
+        ===== 目标平台状态（直接影响结果）=====
+        平台中心位置 (perching_p*)、平台速度 (perching_v*)、
+        平台法向轴 + 旋转角 (perching_axis_* + perching_theta)
+      -->
       <param name="perching_px" value="0.5"/>
       <param name="perching_py" value="0.0"/>
       <!-- <param name="perching_pz" value="1.0"/> -->
@@ -63,15 +145,23 @@
       <param name="perching_vy" value="0.0"/>
       <param name="perching_vz" value="0.0"/>
 
+      <!-- 平台法向（单位向量） -->
       <param name="perching_axis_x" value="0.0"/>
       <param name="perching_axis_y" value="1.0"/>
       <param name="perching_axis_z" value="0.0"/>
+      <!-- 以 perching_axis 为轴旋转角（弧度） -->
       <!-- <param name="perching_theta" value="-0.0"/> -->
       <!-- <param name="perching_theta" value="0.5"/> -->
       <!-- <param name="perching_theta" value="0.5"/> -->
+      <!-- 该角度需与 perching_axis 组合使用，决定最终着陆姿态 -->
       <param name="perching_theta" value="-1.5708"/>
       <!-- <param name="perching_theta" value="-3"/> -->
 
+      <!--
+        ===== 调试/运行模式开关 =====
+        replan: 是否在轨迹执行过程中触发重规划
+        pause_debug: 是否在优化过程中启用可视化暂停（调试用）
+      -->
       <param name="replan" value="false"/>
       <param name="pause_debug" value="false"/>
 

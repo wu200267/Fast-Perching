@@ -1,6 +1,12 @@
 #include <traj_opt/traj_opt.h>
 
 #include <traj_opt/lbfgs_raw.hpp>
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <limits>
+#include <sstream>
+#include <utility>
 
 namespace traj_opt {
 
@@ -20,6 +26,157 @@ static double tictoc_innerloop_;
 static double tictoc_integral_;
 
 static int iter_times_;
+static Eigen::MatrixXd f_DN(const Eigen::Vector3d& x);
+
+struct ConstraintMetrics {
+  double max_tau_norm = 0.0;
+  double min_tau_norm = std::numeric_limits<double>::infinity();
+  double max_abs_omega2 = 0.0;
+};
+
+struct ViolationMetrics {
+  double viol_tau_max = 0.0;
+  double viol_tau_min = 0.0;
+  double viol_omega = 0.0;
+  double viol_total = 0.0;
+};
+
+enum class WinnerEpsLevel {
+  kStrict = 0,
+  kRelaxed = 1,
+  kFallback = 2
+};
+
+static const char* winnerEpsLevelToString(const WinnerEpsLevel level) {
+  switch (level) {
+    case WinnerEpsLevel::kStrict:
+      return "strict";
+    case WinnerEpsLevel::kRelaxed:
+      return "relaxed";
+    case WinnerEpsLevel::kFallback:
+      return "fallback";
+    default:
+      return "fallback";
+  }
+}
+
+static std::string trimCopy(const std::string& s) {
+  size_t beg = 0;
+  while (beg < s.size() && std::isspace(static_cast<unsigned char>(s[beg]))) {
+    ++beg;
+  }
+  size_t end = s.size();
+  while (end > beg && std::isspace(static_cast<unsigned char>(s[end - 1]))) {
+    --end;
+  }
+  return s.substr(beg, end - beg);
+}
+
+static std::vector<double> parseVt2Seeds(const std::string& csv,
+                                         const std::vector<double>& fallback) {
+  std::vector<double> seeds;
+  std::stringstream ss(csv);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    token = trimCopy(token);
+    if (token.empty()) {
+      continue;
+    }
+    try {
+      seeds.push_back(std::stod(token));
+    } catch (...) {
+      seeds.clear();
+      break;
+    }
+  }
+  if (seeds.empty()) {
+    return fallback;
+  }
+  return seeds;
+}
+
+static double computeOmega2Safe(const Eigen::Vector3d& thrust_raw,
+                                const Eigen::Vector3d& jer) {
+  constexpr double kThrustNormEps = 1e-3;
+  constexpr double kDenEps = 1e-6;
+  Eigen::Vector3d thrust = thrust_raw;
+  const double thrust_norm = thrust.norm();
+  if (thrust_norm < kThrustNormEps) {
+    if (thrust_norm < 1e-12) {
+      thrust = Eigen::Vector3d(0.0, 0.0, kThrustNormEps);
+    } else {
+      thrust *= (kThrustNormEps / thrust_norm);
+    }
+  }
+  const Eigen::Vector3d zb = thrust.normalized();
+  const Eigen::Vector3d zb_dot = f_DN(thrust) * jer;
+  double den = zb.z() + 1.0;
+  if (den < kDenEps) {
+    den = kDenEps;
+  }
+  return zb_dot.x() - zb.x() * zb_dot.z() / den;
+}
+
+static ConstraintMetrics evaluateConstraintMetricsOnIntGrid(const Trajectory& traj,
+                                                            const int K) {
+  ConstraintMetrics metrics;
+  const int sample_div = std::max(1, K);
+  const double total_dur = traj.getTotalDuration();
+  double t_base = 0.0;
+  for (const auto& piece : traj) {
+    const double piece_dur = piece.getDuration();
+    for (int j = 0; j <= sample_div; ++j) {
+      const double alpha = static_cast<double>(j) / sample_div;
+      double t = t_base + alpha * piece_dur;
+      if (t > total_dur) {
+        t = total_dur;
+      }
+      const Eigen::Vector3d a = traj.getAcc(t);
+      const Eigen::Vector3d jer = traj.getJer(t);
+      const Eigen::Vector3d thrust = a - g_;
+      const double tau_norm = thrust.norm();
+      metrics.max_tau_norm = std::max(metrics.max_tau_norm, tau_norm);
+      metrics.min_tau_norm = std::min(metrics.min_tau_norm, tau_norm);
+      const double omega2 = computeOmega2Safe(thrust, jer);
+      metrics.max_abs_omega2 = std::max(metrics.max_abs_omega2, std::abs(omega2));
+    }
+    t_base += piece_dur;
+  }
+  if (!std::isfinite(metrics.min_tau_norm)) {
+    metrics.min_tau_norm = 0.0;
+  }
+  return metrics;
+}
+
+static ViolationMetrics evaluateViolations(const ConstraintMetrics& metrics,
+                                           const double tau_min,
+                                           const double tau_max,
+                                           const double omega2_limit) {
+  ViolationMetrics viol;
+  viol.viol_tau_max = std::max(0.0, metrics.max_tau_norm - tau_max);
+  viol.viol_tau_min = std::max(0.0, tau_min - metrics.min_tau_norm);
+  viol.viol_omega = std::max(0.0, metrics.max_abs_omega2 - omega2_limit);
+  viol.viol_total = viol.viol_tau_max + viol.viol_tau_min + viol.viol_omega;
+  return viol;
+}
+
+static WinnerEpsLevel classifyWinnerByEps(const ViolationMetrics& viol,
+                                          const double eps_strict,
+                                          const double eps_relaxed) {
+  const bool strict_ok = viol.viol_tau_max <= eps_strict &&
+                         viol.viol_tau_min <= eps_strict &&
+                         viol.viol_omega <= eps_strict;
+  if (strict_ok) {
+    return WinnerEpsLevel::kStrict;
+  }
+  const bool relaxed_ok = viol.viol_tau_max <= eps_relaxed &&
+                          viol.viol_tau_min <= eps_relaxed &&
+                          viol.viol_omega <= eps_relaxed;
+  if (relaxed_ok) {
+    return WinnerEpsLevel::kRelaxed;
+  }
+  return WinnerEpsLevel::kFallback;
+}
 
 static bool q2v(const Eigen::Quaterniond& q,
                 Eigen::Vector3d& v) {
@@ -320,6 +477,8 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
                             const int& N,
                             Trajectory& traj,
                             const double& t_replan) {
+  // 每次规划前先置无效，避免失败时沿用上一次摘要。
+  last_terminal_summary_.valid = false;
   N_ = N;
   // 核对离散化参数是否与论文 Table I 一致：
   // 期望值应为 K=16, N=10, N*K=160。
@@ -455,33 +614,169 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
   lbfgs_params.min_step = 1e-16;
   lbfgs_params.delta = 1e-4;
   lbfgs_params.line_search_type = 0;
-  double minObjective;
-
+  double minObjective = 0.0;
   int opt_ret = 0;
+  double winner_seed_vt2 = (!fix_terminal_state_) ? guessed_vt.y() : active_vt_.y();
+  WinnerEpsLevel winner_eps_level = WinnerEpsLevel::kFallback;
+  double winner_viol_total_int = 0.0;
 
-  auto tic = std::chrono::steady_clock::now();
-  tictoc_innerloop_ = 0;
-  tictoc_integral_ = 0;
+  struct SeedCandidate {
+    double seed_vt2 = 0.0;
+    int opt_ret = -1;
+    double objective = 0.0;
+    ViolationMetrics viol_int;
+    std::vector<double> x_opt;
+  };
 
-  iter_times_ = 0;
-  opt_ret = lbfgs::lbfgs_optimize(opt_dim_, x_, &minObjective,
-                                  &objectiveFunc, nullptr,
-                                  &earlyExit, this, &lbfgs_params);
+  auto run_single_optimization = [&](double& objective_out, int& ret_out) {
+    tictoc_innerloop_ = 0;
+    tictoc_integral_ = 0;
+    iter_times_ = 0;
+    ret_out = lbfgs::lbfgs_optimize(opt_dim_, x_, &objective_out,
+                                    &objectiveFunc, nullptr,
+                                    &earlyExit, this, &lbfgs_params);
+  };
 
-  auto toc = std::chrono::steady_clock::now();
+  const bool run_multistart = vt_multistart_enable_ && !fix_terminal_state_;
+  const std::string solve_mode = run_multistart ? "multistart" : "single";
+  if (run_multistart) {
+    std::vector<double> x0(x_, x_ + opt_dim_);
+    std::vector<SeedCandidate> candidates;
+    auto tic = std::chrono::steady_clock::now();
+    for (double seed_vt2 : vt_multistart_vt2_seeds_) {
+      std::copy(x0.begin(), x0.end(), x_);
+      x_[vt_off + 1] = seed_vt2;
 
-  std::cout << "\033[32m>ret: " << opt_ret << "\033[0m" << std::endl;
+      SeedCandidate cand;
+      cand.seed_vt2 = seed_vt2;
+      run_single_optimization(cand.objective, cand.opt_ret);
+      std::cout << "[TrajOpt][multistart] seed_vt2=" << seed_vt2
+                << ", ret=" << cand.opt_ret
+                << ", objective=" << cand.objective << std::endl;
+      if (cand.opt_ret < 0) {
+        continue;
+      }
 
-  // std::cout << "innerloop costs: " << tictoc_innerloop_ * 1e-6 << "ms" << std::endl;
-  // std::cout << "integral costs: " << tictoc_integral_ * 1e-6 << "ms" << std::endl;
-  std::cout << "optmization costs: " << (toc - tic).count() * 1e-6 << "ms" << std::endl;
-  // std::cout << "\033[32m>iter times: " << iter_times_ << "\033[0m" << std::endl;
-  if (pause_debug_) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-  }
-  if (opt_ret < 0) {
-    cleanup_x();
-    return false;
+      const double t_seed = x_[0];
+      const double dT_seed = expC2(t_seed);
+      const double T_seed = N_ * dT_seed;
+      Eigen::Map<const Eigen::MatrixXd> P_seed(x_ + dim_t_, 3, dim_p_);
+      const double tail_f_seed = x_[tail_f_off];
+      const Eigen::Vector2d vt_seed = Eigen::Map<const Eigen::Vector2d>(x_ + vt_off);
+      Eigen::Vector3d tailV_seed;
+      forwardTailV(vt_seed, tailV_seed);
+      Eigen::MatrixXd tailS_seed(3, 4);
+      tailS_seed.col(0) = car_p_ + car_v_ * T_seed + tail_q_v_ * robot_l_;
+      tailS_seed.col(1) = tailV_seed;
+      tailS_seed.col(2) = forward_thrust(tail_f_seed) * tail_q_v_ + g_;
+      tailS_seed.col(3).setZero();
+      mincoOpt_.generate(initS_, tailS_seed, P_seed, dT_seed);
+      const Trajectory seed_traj = mincoOpt_.getTraj();
+      const ConstraintMetrics seed_int_metrics = evaluateConstraintMetricsOnIntGrid(seed_traj, K_);
+      cand.viol_int = evaluateViolations(seed_int_metrics, thrust_min_, thrust_max_, omega_max_);
+      cand.x_opt.assign(x_, x_ + opt_dim_);
+      candidates.push_back(std::move(cand));
+    }
+    auto toc = std::chrono::steady_clock::now();
+    std::cout << "[TrajOpt][multistart] total costs: " << (toc - tic).count() * 1e-6
+              << "ms, candidates=" << candidates.size() << std::endl;
+    if (pause_debug_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+    if (candidates.empty()) {
+      last_terminal_summary_.valid = false;
+      cleanup_x();
+      return false;
+    }
+
+    auto better_obj = [&](const SeedCandidate& a, const SeedCandidate& b) {
+      if (a.objective != b.objective) {
+        return a.objective < b.objective;
+      }
+      if (a.viol_int.viol_total != b.viol_int.viol_total) {
+        return a.viol_int.viol_total < b.viol_int.viol_total;
+      }
+      return a.seed_vt2 < b.seed_vt2;
+    };
+    auto better_fallback = [&](const SeedCandidate& a, const SeedCandidate& b) {
+      if (a.viol_int.viol_total != b.viol_int.viol_total) {
+        return a.viol_int.viol_total < b.viol_int.viol_total;
+      }
+      if (a.objective != b.objective) {
+        return a.objective < b.objective;
+      }
+      return a.seed_vt2 < b.seed_vt2;
+    };
+    auto feasible_with_eps = [&](const SeedCandidate& cand, const double eps) {
+      return cand.viol_int.viol_tau_max <= eps &&
+             cand.viol_int.viol_tau_min <= eps &&
+             cand.viol_int.viol_omega <= eps;
+    };
+
+    const double eps_strict = std::max(0.0, vt_multistart_eps_strict_);
+    const double eps_relaxed = std::max(eps_strict, vt_multistart_eps_relaxed_);
+
+    const SeedCandidate* winner = nullptr;
+    winner_eps_level = WinnerEpsLevel::kFallback;
+    for (const auto& cand : candidates) {
+      if (!feasible_with_eps(cand, eps_strict)) {
+        continue;
+      }
+      if (winner == nullptr || better_obj(cand, *winner)) {
+        winner = &cand;
+      }
+    }
+    if (winner != nullptr) {
+      winner_eps_level = WinnerEpsLevel::kStrict;
+    } else {
+      for (const auto& cand : candidates) {
+        if (!feasible_with_eps(cand, eps_relaxed)) {
+          continue;
+        }
+        if (winner == nullptr || better_obj(cand, *winner)) {
+          winner = &cand;
+        }
+      }
+      if (winner != nullptr) {
+        winner_eps_level = WinnerEpsLevel::kRelaxed;
+      } else {
+        for (const auto& cand : candidates) {
+          if (winner == nullptr || better_fallback(cand, *winner)) {
+            winner = &cand;
+          }
+        }
+      }
+    }
+
+    if (winner == nullptr || winner->x_opt.empty()) {
+      last_terminal_summary_.valid = false;
+      cleanup_x();
+      return false;
+    }
+
+    std::copy(winner->x_opt.begin(), winner->x_opt.end(), x_);
+    minObjective = winner->objective;
+    opt_ret = winner->opt_ret;
+    winner_seed_vt2 = winner->seed_vt2;
+    winner_viol_total_int = winner->viol_int.viol_total;
+    std::cout << "[TrajOpt][multistart] winner seed_vt2=" << winner_seed_vt2
+              << ", eps_level=" << winnerEpsLevelToString(winner_eps_level)
+              << ", viol_total_int=" << winner_viol_total_int
+              << ", objective=" << minObjective << std::endl;
+  } else {
+    auto tic = std::chrono::steady_clock::now();
+    run_single_optimization(minObjective, opt_ret);
+    auto toc = std::chrono::steady_clock::now();
+    std::cout << "\033[32m>ret: " << opt_ret << "\033[0m" << std::endl;
+    std::cout << "optmization costs: " << (toc - tic).count() * 1e-6 << "ms" << std::endl;
+    if (pause_debug_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+    if (opt_ret < 0) {
+      last_terminal_summary_.valid = false;
+      cleanup_x();
+      return false;
+    }
   }
 
   // 取本次最终终端变量：
@@ -505,10 +800,44 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
   // std::cout << tailS << std::endl;
   mincoOpt_.generate(initS_, tailS, P, dT);
   traj = mincoOpt_.getTraj();
+  const ConstraintMetrics int_metrics = evaluateConstraintMetricsOnIntGrid(traj, K_);
+  const ViolationMetrics int_viol = evaluateViolations(int_metrics, thrust_min_, thrust_max_, omega_max_);
+  if (!run_multistart) {
+    winner_viol_total_int = int_viol.viol_total;
+    const double eps_strict = std::max(0.0, vt_multistart_eps_strict_);
+    const double eps_relaxed = std::max(eps_strict, vt_multistart_eps_relaxed_);
+    winner_eps_level = classifyWinnerByEps(int_viol, eps_strict, eps_relaxed);
+  }
 
   std::cout << "tailV: " << tailV.transpose() << std::endl;
-  std::cout << "maxOmega: " << getMaxOmega(traj) << std::endl;
-  std::cout << "maxThrust: " << traj.getMaxThrust() << std::endl;
+  std::cout << "max_abs_omega2_int: " << int_metrics.max_abs_omega2 << std::endl;
+  std::cout << "max_tau_norm_int: " << int_metrics.max_tau_norm << std::endl;
+  std::cout << "min_tau_norm_int: " << int_metrics.min_tau_norm << std::endl;
+
+  // 记录给应用层导出的终端摘要（不做文件 IO）。
+  const Eigen::Vector3d vt3d = vt_final.x() * v_t_x_ + vt_final.y() * v_t_y_;
+  const double vt1_abs = std::abs(vt_final.x());
+  const double vt2_abs = std::abs(vt_final.y());
+  last_terminal_summary_.valid = true;
+  last_terminal_summary_.vt1 = vt_final.x();
+  last_terminal_summary_.vt2 = vt_final.y();
+  last_terminal_summary_.vt_norm = vt_final.norm();
+  last_terminal_summary_.vt_signed = vt3d.dot(Eigen::Vector3d::UnitZ());
+  last_terminal_summary_.vt_primary = (vt1_abs >= vt2_abs) ? vt_final.x() : vt_final.y();
+  last_terminal_summary_.vt_primary_axis = (vt1_abs >= vt2_abs) ? 1 : 2;
+  last_terminal_summary_.vt3d = vt3d;
+  last_terminal_summary_.zd = tail_q_v_;
+  last_terminal_summary_.v1 = v_t_x_;
+  last_terminal_summary_.v2 = v_t_y_;
+  last_terminal_summary_.duration = T;
+  last_terminal_summary_.max_tau_norm_int = int_metrics.max_tau_norm;
+  last_terminal_summary_.min_tau_norm_int = int_metrics.min_tau_norm;
+  last_terminal_summary_.max_abs_omega2_int = int_metrics.max_abs_omega2;
+  last_terminal_summary_.solve_mode = solve_mode;
+  last_terminal_summary_.winner_seed_vt2 = winner_seed_vt2;
+  last_terminal_summary_.winner_objective = minObjective;
+  last_terminal_summary_.winner_viol_total_int = winner_viol_total_int;
+  last_terminal_summary_.winner_eps_level = winnerEpsLevelToString(winner_eps_level);
 
   init_traj_ = traj;
   // 保存为下一次 warm-start 来源。
@@ -517,6 +846,10 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
   initial_guess_ = true;
   cleanup_x();
   return true;
+}
+
+TrajOpt::TerminalSummary TrajOpt::getLastTerminalSummary() const {
+  return last_terminal_summary_;
 }
 
 void TrajOpt::addTimeIntPenalty(double& cost) {
@@ -645,6 +978,16 @@ TrajOpt::TrajOpt(ros::NodeHandle& nh) {
   nh.getParam("rhoThrust", rhoThrust_);
   nh.getParam("rhoOmega", rhoOmega_);
   nh.getParam("rhoPerchingCollision", rhoPerchingCollision_);
+  nh.param("vt_multistart_enable", vt_multistart_enable_, false);
+  nh.param("vt_multistart_eps_strict", vt_multistart_eps_strict_, 1e-3);
+  nh.param("vt_multistart_eps_relaxed", vt_multistart_eps_relaxed_, 1e-2);
+  std::string vt2_seeds_csv;
+  nh.param("vt_multistart_vt2_seeds",
+           vt2_seeds_csv,
+           std::string("0.0,0.1,-0.1,0.4,-0.4"));
+  vt_multistart_vt2_seeds_ = parseVt2Seeds(
+      vt2_seeds_csv,
+      std::vector<double>{0.0, 0.1, -0.1, 0.4, -0.4});
   // hard-fix 相关参数：
   // - fix_terminal_state=false: 与旧版本完全一致；
   // - fix_terminal_state=true : 仅从优化变量中移除 vt，tail_f 仍参与优化。
@@ -665,6 +1008,18 @@ TrajOpt::TrajOpt(ros::NodeHandle& nh) {
             << ", has_fixed_vt_y=" << (has_fixed_vt_y_ ? "true" : "false")
             << ", fixed_vt_y_param=" << fixed_vt_y_param_
             << ", print_opt_layout_once=" << (print_opt_layout_once_ ? "true" : "false")
+            << std::endl;
+  std::ostringstream vt2_seed_stream;
+  for (size_t i = 0; i < vt_multistart_vt2_seeds_.size(); ++i) {
+    if (i > 0) {
+      vt2_seed_stream << ",";
+    }
+    vt2_seed_stream << vt_multistart_vt2_seeds_[i];
+  }
+  std::cout << "[TrajOpt] vt multistart: enable=" << (vt_multistart_enable_ ? "true" : "false")
+            << ", vt2_seeds=[" << vt2_seed_stream.str() << "]"
+            << ", eps_strict=" << vt_multistart_eps_strict_
+            << ", eps_relaxed=" << vt_multistart_eps_relaxed_
             << std::endl;
   nh.getParam("pause_debug", pause_debug_);
   visPtr_ = std::make_shared<vis_utils::VisUtils>(nh);

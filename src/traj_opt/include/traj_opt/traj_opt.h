@@ -2,7 +2,9 @@
 #include <ros/ros.h>
 
 #include <chrono>
+#include <string>
 #include <thread>
+#include <vector>
 #include <vis_utils/vis_utils.hpp>
 
 #include "minco.hpp"
@@ -11,6 +13,29 @@ namespace traj_opt {
 
 class TrajOpt {
  public:
+  struct TerminalSummary {
+    bool valid = false;
+    double vt1 = 0.0;
+    double vt2 = 0.0;
+    double vt_norm = 0.0;
+    double vt_signed = 0.0;
+    double vt_primary = 0.0;
+    int vt_primary_axis = 1;  // 1 -> vt1, 2 -> vt2
+    Eigen::Vector3d vt3d = Eigen::Vector3d::Zero();
+    Eigen::Vector3d zd = Eigen::Vector3d::Zero();
+    Eigen::Vector3d v1 = Eigen::Vector3d::Zero();
+    Eigen::Vector3d v2 = Eigen::Vector3d::Zero();
+    double duration = 0.0;
+    double max_tau_norm_int = 0.0;
+    double min_tau_norm_int = 0.0;
+    double max_abs_omega2_int = 0.0;
+    std::string solve_mode = "single";
+    double winner_seed_vt2 = 0.0;
+    double winner_objective = 0.0;
+    double winner_viol_total_int = 0.0;
+    std::string winner_eps_level = "fallback";
+  };
+
   ros::NodeHandle nh_;
   std::shared_ptr<vis_utils::VisUtils> visPtr_;
   bool pause_debug_ = false;
@@ -52,6 +77,10 @@ class TrajOpt {
   // ROS 参数 fixed_* 的数值缓存，仅在 has_fixed_* 为 true 时生效。
   double fixed_vt_x_param_ = 0.0;
   double fixed_vt_y_param_ = 0.0;
+  bool vt_multistart_enable_ = false;
+  std::vector<double> vt_multistart_vt2_seeds_;
+  double vt_multistart_eps_strict_ = 1e-3;
+  double vt_multistart_eps_relaxed_ = 1e-2;
 
   // ========== 本次优化上下文（供 objectiveFunc/earlyExit 读取） ==========
   // active_vt_: 本次优化真正使用的固定 vt 值。
@@ -59,6 +88,7 @@ class TrajOpt {
   // 注意：active_vt_ 在单次 lbfgs_optimize() 期间保持不变。
   Eigen::Vector2d active_vt_ = Eigen::Vector2d::Zero();
   Eigen::Vector2d active_vt_guess_ = Eigen::Vector2d::Zero();
+  TerminalSummary last_terminal_summary_;
 
   std::vector<Eigen::Vector3d> tracking_ps_;
   std::vector<Eigen::Vector3d> tracking_visible_ps_;
@@ -76,6 +106,7 @@ class TrajOpt {
                      const int& N,
                      Trajectory& traj, 
                      const double& t_replan = -1.0);
+  TerminalSummary getLastTerminalSummary() const;
 
   bool feasibleCheck(Trajectory& traj);
 
