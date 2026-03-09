@@ -1,0 +1,4 @@
+generated_at=2026-03-08T15:21:57Z
+entry_type=mechanism_validation
+entry_dir=/root/ros1_noetic_fp/fast_perching/Fast-Perching/fig11_outputs/fig11_mechanism_validation_v1
+entry_note=vt_mapping_dual_baseline remains historical variable-mapping audit entry
