@@ -11,7 +11,6 @@ find_package(catkin REQUIRED COMPONENTS
   visualization_msgs
   tf
   pose_utils
-  Eigen3 REQUIRED
 )
 
 
@@ -30,8 +29,7 @@ include_directories(${ARMADILLO_INCLUDE_DIRS})
 include_directories(include)
 include_directories(
   ${catkin_INCLUDE_DIRS}
-  ${Eigen_INCLUDE_DIRS}
-  ${Eigen3_INCLUDE_DIRS} 
+  ${EIGEN3_INCLUDE_DIRS}
 )
 
 add_executable(odom_visualization src/odom_visualization.cpp)
