@@ -28,6 +28,12 @@ class TrajOpt {
   // SE3 dynamic limitation parameters
   double thrust_max_, thrust_min_;
   double omega_max_, omega_yaw_max_;
+  //可见性参数
+  double rhoVisibility_;
+  double d_vis_min_, d_vis_max_;
+  double fx_, fy_;
+  Eigen::Matrix3d R_cb_;
+  Eigen::Vector3d t_cb_;
   // MINCO Optimizer
   minco::MINCO_S4_Uniform mincoOpt_;
   Eigen::MatrixXd initS_;
@@ -84,6 +90,14 @@ class TrajOpt {
   bool check_collilsion(const Eigen::Vector3d& pos,
                         const Eigen::Vector3d& acc,
                         const Eigen::Vector3d& car_p);
+  //可见性惩罚函数
+  bool grad_cost_visibility(const Eigen::Vector3d& pos,
+                            const Eigen::Vector3d& acc,
+                            const Eigen::Vector3d& car_p,
+                            Eigen::Vector3d& gradp,
+                            Eigen::Vector3d& grada,
+                            Eigen::Vector3d& grad_car_p,
+                            double& cost);
 };
 
 }  // namespace traj_opt

@@ -520,6 +520,7 @@ void TrajOpt::addTimeIntPenalty(double& cost) {
       }
 
       double dur2now = (i + alpha) * mincoOpt_.t(1);
+      double grad_car_t = 0;
       Eigen::Vector3d car_p = car_p_ + car_v_ * dur2now;
       if (grad_cost_perching_collision(pos, acc, car_p,
                                        grad_tmp, grad_tmp2, grad_tmp3,
@@ -527,8 +528,21 @@ void TrajOpt::addTimeIntPenalty(double& cost) {
         grad_p += grad_tmp;
         grad_a += grad_tmp2;
         cost_inner += cost_tmp;
+        // ... perching_collision 调用 ...
+        grad_car_t += grad_tmp3.dot(car_v_);
       }
-      double grad_car_t = grad_tmp3.dot(car_v_);
+
+      if (grad_cost_visibility(pos, acc, car_p,
+                               grad_tmp, grad_tmp2, grad_tmp3,
+                               cost_tmp)) {
+        grad_p += grad_tmp;
+        grad_a += grad_tmp2;
+        cost_inner += cost_tmp;
+        // ... visibility 调用 ...
+        grad_car_t += grad_tmp3.dot(car_v_);
+      }
+
+      //double grad_car_t = grad_tmp3.dot(car_v_);
 
       gradViola_c = beta0 * grad_p.transpose();
       gradViola_t = grad_p.transpose() * vel;
@@ -572,6 +586,19 @@ TrajOpt::TrajOpt(ros::NodeHandle& nh) {
   nh.getParam("rhoOmega", rhoOmega_);
   nh.getParam("rhoPerchingCollision", rhoPerchingCollision_);
   nh.getParam("pause_debug", pause_debug_);
+  // 读取可见性参数
+  nh.getParam("rhoVisibility", rhoVisibility_);
+  nh.getParam("d_vis_min", d_vis_min_);
+  nh.getParam("d_vis_max", d_vis_max_);
+  nh.getParam("cam_fx", fx_);
+  nh.getParam("cam_fy", fy_);
+  // camera extrinsics: down-facing camera
+  // R_cb rotates body frame to camera frame
+  // For down camera: camera z-axis = body -z-axis
+  R_cb_ << 1,  0,  0,
+           0, -1,  0,
+           0,  0, -1;
+  t_cb_.setZero();
   visPtr_ = std::make_shared<vis_utils::VisUtils>(nh);
 }
 
@@ -793,6 +820,143 @@ bool TrajOpt::grad_cost_perching_collision(const Eigen::Vector3d& pos,
     return true;
   }
   return false;
+}
+
+bool TrajOpt::grad_cost_visibility(const Eigen::Vector3d& pos,
+                                   const Eigen::Vector3d& acc,
+                                   const Eigen::Vector3d& car_p,
+                                   Eigen::Vector3d& gradp,
+                                   Eigen::Vector3d& grada,
+                                   Eigen::Vector3d& grad_car_p,
+                                   double& cost) {
+  // ====== 距离激活检查 ======
+  Eigen::Vector3d diff = pos - car_p;
+  double dist_sqr = diff.squaredNorm();
+
+  double pen_min = dist_sqr - d_vis_min_ * d_vis_min_;
+  double pen_max = d_vis_max_ * d_vis_max_ - dist_sqr;
+
+  double grad_s1 = 0, grad_s2 = 0;
+  double s1 = smoothed01(pen_min, grad_s1);
+  double s2 = smoothed01(pen_max, grad_s2);
+
+  if (s1 < 1e-6 || s2 < 1e-6) {
+    return false;  // 不在激活范围内
+  }
+
+  // ====== 正向计算：步骤 1 - 推力和机体 z 轴 ======
+  Eigen::Vector3d thrust_f = acc - g_;
+  Eigen::Vector3d zb = f_N(thrust_f);
+  double az = zb.x(), bz = zb.y(), cz = zb.z();
+  double cz1 = 1.0 / (1.0 + cz);
+
+  // ====== 正向计算：步骤 2 - 旋转矩阵 R（Hopf fibration）======
+  Eigen::Matrix3d R_wb;  // body to world
+  R_wb.col(0) << 1 - az * az * cz1, -az * bz * cz1, -az;
+  R_wb.col(1) << -az * bz * cz1, 1 - bz * bz * cz1, -bz;
+  R_wb.col(2) << az, bz, cz;
+
+  // ====== 正向计算：步骤 3 - 世界系到机体系 ======
+  Eigen::Vector3d d_w = car_p - pos;  // 目标相对无人机，世界系
+  Eigen::Vector3d rho_b = R_wb.transpose() * d_w;  // 机体系
+
+  // ====== 正向计算：步骤 4 - 机体系到相机系 ======
+  Eigen::Vector3d rho_c = R_cb_ * (rho_b - t_cb_);
+
+  // ====== 深度检查：目标必须在相机前方 ======
+  if (rho_c.z() < 0.01) {
+    return false;  // 目标在相机后方，跳过
+  }
+
+  // ====== 正向计算：步骤 5 - 针孔投影 ======
+  double inv_z = 1.0 / rho_c.z();
+  double uc = fx_ * rho_c.x() * inv_z;
+  double vc = fy_ * rho_c.y() * inv_z;
+
+  // ====== 正向计算：步骤 6 - 核心代价 ======
+  double Fp = uc * uc + vc * vc;
+
+  // ====== 总代价 ======
+  cost = s1 * s2 * Fp * rhoVisibility_;
+
+  // ====== 反向梯度：步骤 A - Fp 对 (uc, vc) ======
+  // 步骤 B - (uc, vc) 对 rho_c
+  Eigen::Vector3d grad_rho_c;
+  grad_rho_c.x() = 2 * uc * fx_ * inv_z;
+  grad_rho_c.y() = 2 * vc * fy_ * inv_z;
+  grad_rho_c.z() = -2 * Fp * inv_z;
+
+  // ====== 反向步骤 C：rho_c 对 rho_b ======
+  Eigen::Vector3d grad_rho_b = R_cb_.transpose() * grad_rho_c;
+
+  // ====== 反向步骤 D：rho_b 对 pos ======
+  Eigen::Vector3d grad_p_from_Fp = -R_wb * grad_rho_b;
+
+  // ====== 反向步骤 E：rho_b 对 car_p（ʷϱ）======
+  Eigen::Vector3d grad_car_p_from_Fp = R_wb * grad_rho_b;
+
+  // ====== 反向步骤 F：rho_b 对 zb 对 acc ======
+  // rho_b = R_wb^T * d_w，R_wb 的列依赖 zb
+  // rho_b.x() = x_b^T * d_w, rho_b.y() = y_b^T * d_w, rho_b.z() = z_b^T * d_w
+  // 需要 d(R_wb^T * d_w) / d(zb)
+
+  double cz1_sq = cz1 * cz1;
+
+  // x_b 对 (az, bz, cz) 的偏导乘以 d_w
+  Eigen::Vector3d dx_daz, dx_dbz, dx_dcz;
+  // x_b = [1 - az^2/(1+cz), -az*bz/(1+cz), -az]
+  dx_daz << -2 * az * cz1, -bz * cz1, -1.0;
+  dx_dbz << 0.0, -az * cz1, 0.0;
+  dx_dcz << az * az * cz1_sq, az * bz * cz1_sq, 0.0;
+
+  // y_b 对 (az, bz, cz) 的偏导
+  Eigen::Vector3d dy_daz, dy_dbz, dy_dcz;
+  // y_b = [-az*bz/(1+cz), 1 - bz^2/(1+cz), -bz]
+  dy_daz <<  -bz * cz1,       0.0,         0.0;
+  dy_dbz <<  -az * cz1,   -2 * bz * cz1,  -1.0;
+  dy_dcz <<  az * bz * cz1_sq,  bz * bz * cz1_sq,  0.0;
+
+  // z_b 对自身的偏导就是单位矩阵（直接就是 d_w）
+
+  // 组合得到 grad_zb
+  Eigen::Vector3d grad_zb;
+  grad_zb.x() = grad_rho_b.x() * dx_daz.dot(d_w)
+              + grad_rho_b.y() * dy_daz.dot(d_w)
+              + grad_rho_b.z() * d_w.x();
+
+  grad_zb.y() = grad_rho_b.x() * dx_dbz.dot(d_w)
+              + grad_rho_b.y() * dy_dbz.dot(d_w)
+              + grad_rho_b.z() * d_w.y();
+
+  grad_zb.z() = grad_rho_b.x() * dx_dcz.dot(d_w)
+              + grad_rho_b.y() * dy_dcz.dot(d_w)
+              + grad_rho_b.z() * d_w.z();
+
+  // zb 传回到 acc
+  Eigen::Vector3d grad_a_from_Fp = f_DN(thrust_f).transpose() * grad_zb;
+
+  // ====== 反向步骤 G：合并距离激活开关 ======
+  // J = s1 * s2 * Fp
+  // dJ = s1' * ds1_input * s2 * Fp + s1 * s2' * ds2_input * Fp + s1 * s2 * dFp
+
+  Eigen::Vector3d grad_dist_p = 2 * diff;   // ∂(dist_sqr)/∂pos = 2*(pos - car_p)
+  Eigen::Vector3d grad_dist_car = -2 * diff; // ∂(dist_sqr)/∂car_p = -2*(pos - car_p)
+
+  // s1 的输入是 pen_min = dist_sqr - d_min^2
+  // s2 的输入是 pen_max = d_max^2 - dist_sqr
+  Eigen::Vector3d grad_p_from_s1 = grad_s1 * s2 * Fp * grad_dist_p;
+  Eigen::Vector3d grad_p_from_s2 = s1 * grad_s2 * Fp * (-grad_dist_p);  // pen_max 对 dist_sqr 取负
+
+  Eigen::Vector3d grad_car_p_from_s1 = grad_s1 * s2 * Fp * grad_dist_car;
+  Eigen::Vector3d grad_car_p_from_s2 = s1 * grad_s2 * Fp * (-grad_dist_car);
+
+  // ====== 最终合并 ======
+  gradp = rhoVisibility_ * (s1 * s2 * grad_p_from_Fp + grad_p_from_s1 + grad_p_from_s2);
+  grada = rhoVisibility_ * s1 * s2 * grad_a_from_Fp;
+  grad_car_p = rhoVisibility_ * (s1 * s2 * grad_car_p_from_Fp + grad_car_p_from_s1 + grad_car_p_from_s2);
+  cost = s1 * s2 * Fp * rhoVisibility_;
+
+  return true;
 }
 
 bool TrajOpt::check_collilsion(const Eigen::Vector3d& pos,
