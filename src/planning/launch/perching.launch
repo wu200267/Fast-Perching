@@ -54,11 +54,16 @@
       <param name="rhoOmega" value="100000.0"/>
       <param name="rhoPerchingCollision" value="1000000.0"/>
 
+      <!-- 可见性惩罚参数: tuned rhoVisibility=300000.0, fallback=100000.0 -->
+      <param name="rhoVisibility"  value="300000.0"/>
+      <param name="d_vis_min"      value="0.2"/>
+      <param name="d_vis_max"      value="2.0"/>
+
       <param name="perching_px" value="0.5"/>
       <param name="perching_py" value="0.0"/>
       <!-- <param name="perching_pz" value="1.0"/> -->
       <!-- <param name="perching_pz" value="1.5"/> -->
-      <param name="perching_pz" value="2.0"/>
+      <param name="perching_pz" value="1.0"/>
       <param name="perching_vx" value="2.0"/>
       <param name="perching_vy" value="0.0"/>
       <param name="perching_vz" value="0.0"/>
@@ -68,8 +73,10 @@
       <param name="perching_axis_z" value="0.0"/>
       <!-- <param name="perching_theta" value="-0.0"/> -->
       <!-- <param name="perching_theta" value="0.5"/> -->
+      <!-- 把竖直墙面改成水平平台 -->
+      <param name="perching_theta" value="0.0"/>
       <!-- <param name="perching_theta" value="0.5"/> -->
-      <param name="perching_theta" value="-1.5708"/>
+      <!-- <param name="perching_theta" value="-1.5708"/> -->
       <!-- <param name="perching_theta" value="-3"/> -->
 
       <param name="replan" value="false"/>

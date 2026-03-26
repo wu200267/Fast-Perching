@@ -31,7 +31,6 @@ class TrajOpt {
   //可见性参数
   double rhoVisibility_;
   double d_vis_min_, d_vis_max_;
-  double fx_, fy_;
   Eigen::Matrix3d R_cb_;
   Eigen::Vector3d t_cb_;
   // MINCO Optimizer

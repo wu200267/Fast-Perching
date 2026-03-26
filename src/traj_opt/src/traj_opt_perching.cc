@@ -590,8 +590,6 @@ TrajOpt::TrajOpt(ros::NodeHandle& nh) {
   nh.getParam("rhoVisibility", rhoVisibility_);
   nh.getParam("d_vis_min", d_vis_min_);
   nh.getParam("d_vis_max", d_vis_max_);
-  nh.getParam("cam_fx", fx_);
-  nh.getParam("cam_fy", fy_);
   // camera extrinsics: down-facing camera
   // R_cb rotates body frame to camera frame
   // For down camera: camera z-axis = body -z-axis
@@ -864,26 +862,31 @@ bool TrajOpt::grad_cost_visibility(const Eigen::Vector3d& pos,
   Eigen::Vector3d rho_c = R_cb_ * (rho_b - t_cb_);
 
   // ====== 深度检查：目标必须在相机前方 ======
-  if (rho_c.z() < 0.01) {
-    return false;  // 目标在相机后方，跳过
-  }
-
-  // ====== 正向计算：步骤 5 - 针孔投影 ======
+  // if (rho_c.z() < 0.01) {
+  //   return false;  // 目标在相机后方，跳过
+  // }
+  // 换成软激活:
+  double grad_sz = 0;
+  double sz = smoothed01(rho_c.z() - 0.1, grad_sz);  // 深度 > 0.1m 才激活
+  // Intentionally ignore grad_sz for now: use sz as a smooth weight only,
+  // so the gate value stays continuous without introducing an extra driving
+  // gradient near the depth threshold.
+  if (sz < 1e-6) return false; 
+  // ====== 正向计算：步骤 5 - 归一化像平面代价 ======
+  // Fp uses normalized image-plane coordinates x/z and y/z so it stays
+  // dimensionless and is less sensitive to camera intrinsics.
   double inv_z = 1.0 / rho_c.z();
-  double uc = fx_ * rho_c.x() * inv_z;
-  double vc = fy_ * rho_c.y() * inv_z;
+  double u_n = rho_c.x() * inv_z;
+  double v_n = rho_c.y() * inv_z;
 
   // ====== 正向计算：步骤 6 - 核心代价 ======
-  double Fp = uc * uc + vc * vc;
+  double Fp = u_n * u_n + v_n * v_n;
 
-  // ====== 总代价 ======
-  cost = s1 * s2 * Fp * rhoVisibility_;
-
-  // ====== 反向梯度：步骤 A - Fp 对 (uc, vc) ======
-  // 步骤 B - (uc, vc) 对 rho_c
+  // ====== 反向梯度：步骤 A - Fp 对归一化像平面坐标 ======
+  // 步骤 B - (u_n, v_n) 对 rho_c
   Eigen::Vector3d grad_rho_c;
-  grad_rho_c.x() = 2 * uc * fx_ * inv_z;
-  grad_rho_c.y() = 2 * vc * fy_ * inv_z;
+  grad_rho_c.x() = 2 * u_n * inv_z;
+  grad_rho_c.y() = 2 * v_n * inv_z;
   grad_rho_c.z() = -2 * Fp * inv_z;
 
   // ====== 反向步骤 C：rho_c 对 rho_b ======
@@ -936,8 +939,8 @@ bool TrajOpt::grad_cost_visibility(const Eigen::Vector3d& pos,
   Eigen::Vector3d grad_a_from_Fp = f_DN(thrust_f).transpose() * grad_zb;
 
   // ====== 反向步骤 G：合并距离激活开关 ======
-  // J = s1 * s2 * Fp
-  // dJ = s1' * ds1_input * s2 * Fp + s1 * s2' * ds2_input * Fp + s1 * s2 * dFp
+  // J = sz * s1 * s2 * Fp * rho
+  // dJ/dx = sz * (s2*Fp*ds1 + s1*Fp*ds2 + s1*s2*dFp) * rho
 
   Eigen::Vector3d grad_dist_p = 2 * diff;   // ∂(dist_sqr)/∂pos = 2*(pos - car_p)
   Eigen::Vector3d grad_dist_car = -2 * diff; // ∂(dist_sqr)/∂car_p = -2*(pos - car_p)
@@ -951,10 +954,10 @@ bool TrajOpt::grad_cost_visibility(const Eigen::Vector3d& pos,
   Eigen::Vector3d grad_car_p_from_s2 = s1 * grad_s2 * Fp * (-grad_dist_car);
 
   // ====== 最终合并 ======
-  gradp = rhoVisibility_ * (s1 * s2 * grad_p_from_Fp + grad_p_from_s1 + grad_p_from_s2);
-  grada = rhoVisibility_ * s1 * s2 * grad_a_from_Fp;
-  grad_car_p = rhoVisibility_ * (s1 * s2 * grad_car_p_from_Fp + grad_car_p_from_s1 + grad_car_p_from_s2);
-  cost = s1 * s2 * Fp * rhoVisibility_;
+  gradp = rhoVisibility_ * sz * (s1 * s2 * grad_p_from_Fp + grad_p_from_s1 + grad_p_from_s2);
+  grada = rhoVisibility_ * sz * s1 * s2 * grad_a_from_Fp;
+  grad_car_p = rhoVisibility_ * sz * (s1 * s2 * grad_car_p_from_Fp + grad_car_p_from_s1 + grad_car_p_from_s2);
+  cost = sz * s1 * s2 * Fp * rhoVisibility_;
 
   return true;
 }
