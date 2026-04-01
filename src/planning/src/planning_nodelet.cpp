@@ -5,6 +5,7 @@
 #include <ros/ros.h>
 #include <std_msgs/Empty.h>
 #include <traj_opt/traj_opt.h>
+#include <traj_opt/target_predictor.hpp>
 
 #include <Eigen/Core>
 #include <atomic>
@@ -23,6 +24,7 @@ class Nodelet : public nodelet::Nodelet {
 
   std::shared_ptr<vis_utils::VisUtils> visPtr_;
   std::shared_ptr<traj_opt::TrajOpt> trajOptPtr_;
+  traj_opt::TargetPredictor predictor_;
 
   // NOTE planning or fake target
   bool target_ = false;
@@ -94,7 +96,15 @@ class Nodelet : public nodelet::Nodelet {
               << land_q.y() << ","
               << land_q.z() << "," << std::endl;
 
-    generate_new_traj_success = trajOptPtr_->generate_traj(iniState, target_p, target_v, land_q, 10, traj);
+    // Compute surface normal: land_q 的 z 轴就是法向量（和原代码 q2v 逻辑一致）
+    Eigen::Vector3d surface_normal = land_q.toRotationMatrix().col(2);
+
+    // Seed predictor with constant-velocity model (matches original behavior)
+    predictor_.setSurfaceNormal(surface_normal);
+    predictor_.seedConstantVelocity(target_p, target_v, surface_normal,
+                                    ros::Time::now().toSec());
+    predictor_.generatePrediction(10.0, 0.1);
+    generate_new_traj_success = trajOptPtr_->generate_traj(iniState, predictor_, 10, traj);
     if (generate_new_traj_success) {
       visPtr_->visualize_traj(traj, "traj");
 
@@ -227,7 +237,7 @@ class Nodelet : public nodelet::Nodelet {
         iniState.col(3) = traj.getJer(t);
         std::cout << "iniState: \n"
                   << iniState << std::endl;
-        trajOptPtr_->generate_traj(iniState, target_p, target_v, land_q, 10, traj, t);
+        trajOptPtr_->generate_traj(iniState, predictor_, 10, traj, t);
         visPtr_->visualize_traj(traj, "traj");
         t = 0;
         std::cout << "max omega: " << max_omega << std::endl;

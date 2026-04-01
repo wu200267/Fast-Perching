@@ -1,10 +1,11 @@
 #include <traj_opt/traj_opt.h>
 
 #include <traj_opt/lbfgs_raw.hpp>
+#include <traj_opt/target_predictor.hpp>
 
 namespace traj_opt {
 
-static Eigen::Vector3d car_p_, car_v_;
+static const TargetPredictor* predictor_ = nullptr;
 static Eigen::Vector3d tail_q_v_;
 static Eigen::Vector3d g_(0, 0, -9.8);
 static Eigen::Vector3d land_v_;
@@ -133,11 +134,23 @@ static inline double objectiveFunc(void* ptrObj,
   Eigen::Map<Eigen::Vector2d> grad_vt(grad + obj.dim_t_ + 3 * obj.dim_p_ + 1);
 
   double dT = expC2(t);
+  double T = obj.N_ * dT;
+
+  // Query predicted platform state at terminal time T
+  tail_q_v_ = predictor_->getNormal(T);
+  land_v_ = predictor_->getVel(T) - tail_q_v_ * obj.v_plus_;
+  v_t_x_ = tail_q_v_.cross(Eigen::Vector3d(0, 0, 1));
+  if (v_t_x_.squaredNorm() == 0)
+    v_t_x_ = tail_q_v_.cross(Eigen::Vector3d(0, 1, 0));
+  v_t_x_.normalize();
+  v_t_y_ = tail_q_v_.cross(v_t_x_);
+  v_t_y_.normalize();
+
   Eigen::Vector3d tailV, grad_tailV;
   forwardTailV(vt, tailV);
 
   Eigen::MatrixXd tailS(3, 4);
-  tailS.col(0) = car_p_ + car_v_ * obj.N_ * dT + tail_q_v_ * obj.robot_l_;
+  tailS.col(0) = predictor_->getPos(T) + tail_q_v_ * obj.robot_l_;
   tailS.col(1) = tailV;
   tailS.col(2) = forward_thrust(tail_f) * tail_q_v_ + g_;
   tailS.col(3).setZero();
@@ -164,7 +177,7 @@ static inline double objectiveFunc(void* ptrObj,
   tictoc_innerloop_ += (toc - tic).count();
   // std::cout << "cost of penalty: " << cost - cost_with_only_energy << std::endl;
 
-  obj.mincoOpt_.gdT += obj.mincoOpt_.gdTail.col(0).dot(obj.N_ * car_v_);
+  obj.mincoOpt_.gdT += obj.mincoOpt_.gdTail.col(0).dot(obj.N_ * predictor_->getVel(T));
   grad_tailV = obj.mincoOpt_.gdTail.col(1);
   double grad_thrust = obj.mincoOpt_.gdTail.col(2).dot(tail_q_v_);
   addLayerThrust(tail_f, grad_thrust, grad_f);
@@ -205,11 +218,12 @@ static inline int earlyExit(void* ptrObj,
 
     double dT = expC2(t);
     double T = obj.N_ * dT;
+    tail_q_v_ = predictor_->getNormal(T);
     Eigen::Vector3d tailV;
     forwardTailV(vt, tailV);
 
     Eigen::MatrixXd tailS(3, 4);
-    tailS.col(0) = car_p_ + car_v_ * T + tail_q_v_ * obj.robot_l_;
+    tailS.col(0) = predictor_->getPos(T) + tail_q_v_ * obj.robot_l_;
     tailS.col(1) = tailV;
     tailS.col(2) = forward_thrust(tail_f) * tail_q_v_ + g_;
     tailS.col(3).setZero();
@@ -292,9 +306,7 @@ static double getMaxOmega(Trajectory& traj) {
 }
 
 bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
-                            const Eigen::Vector3d& car_p,
-                            const Eigen::Vector3d& car_v,
-                            const Eigen::Quaterniond& land_q,
+                            const TargetPredictor& predictor,
                             const int& N,
                             Trajectory& traj,
                             const double& t_replan) {
@@ -306,18 +318,17 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
   Eigen::Map<Eigen::MatrixXd> P(x_ + dim_t_, 3, dim_p_);
   double& tail_f = x_[dim_t_ + 3 * dim_p_];
   Eigen::Map<Eigen::Vector2d> vt(x_ + dim_t_ + 3 * dim_p_ + 1);
-  car_p_ = car_p;
-  car_v_ = car_v;
+  predictor_ = &predictor;
   // std::cout << "land_q: "
   //           << land_q.w() << ","
   //           << land_q.x() << ","
   //           << land_q.y() << ","
   //           << land_q.z() << "," << std::endl;
-  q2v(land_q, tail_q_v_);
+  tail_q_v_ = predictor.getNormal(0.0);
   thrust_middle_ = (thrust_max_ + thrust_min_) / 2;
   thrust_half_ = (thrust_max_ - thrust_min_) / 2;
 
-  land_v_ = car_v - tail_q_v_ * v_plus_;
+  land_v_ = predictor.getVel(0.0) - tail_q_v_ * v_plus_;
   // std::cout << "tail_q_v_: " << tail_q_v_.transpose() << std::endl;
 
   v_t_x_ = tail_q_v_.cross(Eigen::Vector3d(0, 0, 1));
@@ -351,8 +362,8 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
   } else {
     Eigen::MatrixXd bvp_i = initS_;
     Eigen::MatrixXd bvp_f(3, 4);
-    bvp_f.col(0) = car_p_;
-    bvp_f.col(1) = car_v_;
+    bvp_f.col(0) = predictor_->getPos(0.0);
+    bvp_f.col(1) = predictor_->getVel(0.0);
     bvp_f.col(2) = forward_thrust(tail_f) * tail_q_v_ + g_;
     bvp_f.col(3).setZero();
     double T_bvp = (bvp_f.col(0) - bvp_i.col(0)).norm() / vmax_;
@@ -360,7 +371,7 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
     double max_omega = 0;
     do {
       T_bvp += 1.0;
-      bvp_f.col(0) = car_p_ + car_v_ * T_bvp;
+      bvp_f.col(0) = predictor_->getPos(T_bvp);
       bvp(T_bvp, bvp_i, bvp_f, coeffMat);
       std::vector<double> durs{T_bvp};
       std::vector<CoefficientMat> coeffs{coeffMat};
@@ -422,9 +433,10 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
   double dT = expC2(t);
   double T = N_ * dT;
   Eigen::Vector3d tailV;
+  tail_q_v_ = predictor_->getNormal(T);
   forwardTailV(vt, tailV);
   Eigen::MatrixXd tailS(3, 4);
-  tailS.col(0) = car_p_ + car_v_ * T + tail_q_v_ * robot_l_;
+  tailS.col(0) = predictor_->getPos(T) + tail_q_v_ * robot_l_;
   tailS.col(1) = tailV;
   tailS.col(2) = forward_thrust(tail_f) * tail_q_v_ + g_;
   tailS.col(3).setZero();
@@ -521,7 +533,8 @@ void TrajOpt::addTimeIntPenalty(double& cost) {
 
       double dur2now = (i + alpha) * mincoOpt_.t(1);
       double grad_car_t = 0;
-      Eigen::Vector3d car_p = car_p_ + car_v_ * dur2now;
+      Eigen::Vector3d car_p = predictor_->getPos(dur2now);
+      Eigen::Vector3d car_v = predictor_->getVel(dur2now);
       if (grad_cost_perching_collision(pos, acc, car_p,
                                        grad_tmp, grad_tmp2, grad_tmp3,
                                        cost_tmp)) {
@@ -529,7 +542,7 @@ void TrajOpt::addTimeIntPenalty(double& cost) {
         grad_a += grad_tmp2;
         cost_inner += cost_tmp;
         // ... perching_collision 调用 ...
-        grad_car_t += grad_tmp3.dot(car_v_);
+        grad_car_t += grad_tmp3.dot(car_v);
       }
 
       if (grad_cost_visibility(pos, acc, car_p,
@@ -539,7 +552,7 @@ void TrajOpt::addTimeIntPenalty(double& cost) {
         grad_a += grad_tmp2;
         cost_inner += cost_tmp;
         // ... visibility 调用 ...
-        grad_car_t += grad_tmp3.dot(car_v_);
+        grad_car_t += grad_tmp3.dot(car_v);
       }
 
       //double grad_car_t = grad_tmp3.dot(car_v_);

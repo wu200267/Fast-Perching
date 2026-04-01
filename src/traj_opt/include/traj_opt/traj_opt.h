@@ -6,6 +6,7 @@
 #include <vis_utils/vis_utils.hpp>
 
 #include "minco.hpp"
+#include "traj_opt/target_predictor.hpp"
 
 namespace traj_opt {
 
@@ -50,9 +51,7 @@ class TrajOpt {
 
   int optimize(const double& delta = 1e-4);
   bool generate_traj(const Eigen::MatrixXd& iniState,
-                     const Eigen::Vector3d& car_p,
-                     const Eigen::Vector3d& car_v,
-                     const Eigen::Quaterniond& land_q,
+                     const TargetPredictor& predictor,
                      const int& N,
                      Trajectory& traj, 
                      const double& t_replan = -1.0);
