@@ -22,12 +22,7 @@ static double tictoc_integral_;
 
 static int iter_times_;
 
-static bool q2v(const Eigen::Quaterniond& q,
-                Eigen::Vector3d& v) {
-  Eigen::MatrixXd R = q.toRotationMatrix();
-  v = R.col(2);
-  return true;
-}
+
 static Eigen::Vector3d f_N(const Eigen::Vector3d& x) {
   return x.normalized();
 }
