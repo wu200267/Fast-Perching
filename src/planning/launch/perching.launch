@@ -29,7 +29,7 @@
       <remap from="~land_triger" to="/land_triger"/>
       <remap from="~target" to="/target/odom"/>
 
-      <param name="plan_hz" value="5"/>
+      <param name="plan_hz" value="100"/>
 
       <param name="K" value="16"/>
       <param name="vmax" value="6.0"/>
@@ -78,8 +78,9 @@
       <!-- <param name="perching_theta" value="0.5"/> -->
       <!-- <param name="perching_theta" value="-1.5708"/> -->
       <!-- <param name="perching_theta" value="-3"/> -->
+      <param name="perching_omega" value="0.3" />
 
-      <param name="replan" value="false"/>
+      <param name="replan" value="true"/>
       <param name="pause_debug" value="false"/>
 
     </node>

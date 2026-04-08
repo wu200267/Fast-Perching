@@ -131,16 +131,6 @@ static inline double objectiveFunc(void* ptrObj,
   double dT = expC2(t);
   double T = obj.N_ * dT;
 
-  // Query predicted platform state at terminal time T
-  tail_q_v_ = predictor_->getNormal(T);
-  land_v_ = predictor_->getVel(T) - tail_q_v_ * obj.v_plus_;
-  v_t_x_ = tail_q_v_.cross(Eigen::Vector3d(0, 0, 1));
-  if (v_t_x_.squaredNorm() == 0)
-    v_t_x_ = tail_q_v_.cross(Eigen::Vector3d(0, 1, 0));
-  v_t_x_.normalize();
-  v_t_y_ = tail_q_v_.cross(v_t_x_);
-  v_t_y_.normalize();
-
   Eigen::Vector3d tailV, grad_tailV;
   forwardTailV(vt, tailV);
 
@@ -213,7 +203,7 @@ static inline int earlyExit(void* ptrObj,
 
     double dT = expC2(t);
     double T = obj.N_ * dT;
-    tail_q_v_ = predictor_->getNormal(T);
+
     Eigen::Vector3d tailV;
     forwardTailV(vt, tailV);
 
@@ -428,7 +418,7 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
   double dT = expC2(t);
   double T = N_ * dT;
   Eigen::Vector3d tailV;
-  tail_q_v_ = predictor_->getNormal(T);
+
   forwardTailV(vt, tailV);
   Eigen::MatrixXd tailS(3, 4);
   tailS.col(0) = predictor_->getPos(T) + tail_q_v_ * robot_l_;

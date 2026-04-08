@@ -182,6 +182,13 @@ class TargetPredictor {
   inline double predDt() const { return pred_dt_; }
   inline double predDuration() const { return pred_duration_; }
 
+  inline void reset() {
+    ekf_.reset();
+    pred_seq_.clear();
+    pred_dt_ = 0.0;
+    pred_duration_ = 0.0;
+  }
+
  private:
   // ----------------------------------------------------------------
   //  CTRV forward propagation (Phase A prediction)
