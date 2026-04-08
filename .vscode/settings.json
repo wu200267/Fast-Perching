@@ -6,5 +6,6 @@
   ],
   "python.analysis.extraPaths": [
     "/opt/ros/noetic/lib/python3/dist-packages"
-  ]
+  ],
+  "cmake.sourceDirectory": "/root/ros1_noetic_fp/fast_perching/Fast-Perching/src/planning"
 }
