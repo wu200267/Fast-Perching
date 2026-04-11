@@ -157,6 +157,13 @@ class CtrvEkf {
   inline double lastTime() const { return last_time_; }
   inline const StateMat& processNoise() const { return Q_; }
 
+  inline void reset() {
+    x_.setZero();
+    P_ = StateMat::Identity();
+    last_time_ = 0.0;
+    initialized_ = false;
+  }
+
   // ----------------------------------------------------------------
   //  Noise configuration (call before first measurement)
   // ----------------------------------------------------------------
